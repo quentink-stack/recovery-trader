@@ -8,7 +8,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
-from alpaca import AlpacaMarketData, AlpacaOption
+from alpaca import AlpacaMarketData
 from backtest import BacktestResult, STRATEGIES, run_dip_recovery_proxy, run_strategy
 from scoring import Candidate, ScreenConfig, rebound_score, screen
 from screener import DropResearch, latest_large_drop, load_watchlist
@@ -96,14 +96,13 @@ class RecoveryTrader(ttk.Frame):
         ttk.Button(lower, text="Load CSV…", command=self.import_csv).grid(row=0, column=0, sticky="w")
         ttk.Label(lower, textvariable=self.source_label).grid(row=0, column=1, sticky="w", padx=12)
         ttk.Button(lower, text="Connect Alpaca Basic", command=self.connect_alpaca).grid(row=2, column=0, sticky="w", pady=(8, 0))
-        ttk.Button(lower, text="Load Alpaca chain", command=self.load_alpaca_chain).grid(row=2, column=1, sticky="w", pady=(8, 0))
         ttk.Button(lower, text="Run dip-recovery backtest", command=self.run_backtest).grid(row=2, column=2, sticky="e", pady=(8, 0))
         ttk.Button(lower, text="Screen watchlist drops", command=self.screen_watchlist).grid(row=3, column=0, sticky="w", pady=(8, 0))
         ttk.Button(lower, text="Compare strategies", command=self.compare_strategies).grid(row=3, column=1, sticky="w", pady=(8, 0))
         ttk.Button(lower, text="Export screened CSV…", command=self.export_csv).grid(row=0, column=2, sticky="e")
         self.detail = ttk.Label(self, textvariable=self.status, wraplength=850, justify="left")
         self.detail.grid(row=5, column=0, sticky="ew", pady=(10, 0))
-        ttk.Label(self, text="Educational research tool only. Verify earnings drivers, option-chain spreads, and risk before trading.", style="Muted.TLabel").grid(row=6, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(self, text="Educational research tool only. Verify earnings drivers, price data, and risk before trading.", style="Muted.TLabel").grid(row=6, column=0, sticky="w", pady=(8, 0))
 
     def config(self) -> ScreenConfig:
         try:
@@ -156,48 +155,7 @@ class RecoveryTrader(ttk.Frame):
         except ValueError as exc:
             messagebox.showerror("Alpaca Basic", str(exc))
             return
-        self.status.set("Alpaca Basic ready: read-only IEX equities and indicative options data. No orders are supported.")
-
-    def load_alpaca_chain(self) -> None:
-        if not self.alpaca:
-            messagebox.showinfo("Connect Alpaca", "Connect Alpaca Basic first. Its options feed is indicative and not execution-quality OPRA data.")
-            return
-        selected = self.table.selection()
-        if not selected:
-            messagebox.showinfo("Select a candidate", "Select a screener row before loading its chain.")
-            return
-        try:
-            config = self.config()
-            self.status.set(f"Loading Alpaca indicative chain for {selected[0]}...")
-            self.master.update_idletasks()
-            contracts = self.alpaca.option_chain(selected[0], config.min_dte, config.max_dte)
-        except Exception as exc:
-            messagebox.showerror("Could not load Alpaca chain", str(exc))
-            return
-        self.show_alpaca_chain(selected[0], contracts)
-        self.status.set(f"Loaded {len(contracts)} indicative Alpaca contracts for {selected[0]}.")
-
-    def show_alpaca_chain(self, ticker: str, contracts: list[AlpacaOption]) -> None:
-        window = tk.Toplevel(self.master)
-        window.title(f"{ticker} - Alpaca Basic indicative chain")
-        window.minsize(850, 420)
-        frame = ttk.Frame(window, padding=12)
-        frame.pack(fill="both", expand=True)
-        ttk.Label(frame, text=f"{ticker} Alpaca Basic option chain", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(frame, text="Indicative feed: delayed trades and modified quotes. Use only for research and development.").pack(anchor="w", pady=(2, 10))
-        columns = ("type", "expiration", "dte", "strike", "bid", "ask", "spread", "last", "delta", "gamma", "theta", "vega")
-        tree = ttk.Treeview(frame, columns=columns, show="headings")
-        labels = {"type":"Type", "expiration":"Expiration", "dte":"DTE", "strike":"Strike", "bid":"Bid", "ask":"Ask", "spread":"Spread", "last":"Last", "delta":"Delta", "gamma":"Gamma", "theta":"Theta", "vega":"Vega"}
-        for column in columns:
-            tree.heading(column, text=labels[column]); tree.column(column, width=70, anchor="e")
-        tree.column("type", width=55, anchor="w"); tree.column("expiration", width=95, anchor="w")
-        tree.pack(side="left", fill="both", expand=True)
-        bar = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
-        bar.pack(side="right", fill="y"); tree.configure(yscrollcommand=bar.set)
-        for contract in contracts:
-            number = lambda value: "-" if value is None else f"{value:.3f}"
-            money = lambda value: "-" if value is None else f"{value:.2f}"
-            tree.insert("", "end", values=(contract.contract_type, contract.expiration.isoformat(), contract.dte, money(contract.strike), money(contract.bid), money(contract.ask), money(contract.spread), money(contract.last), number(contract.delta), number(contract.gamma), number(contract.theta), number(contract.vega)))
+        self.status.set("Alpaca Basic ready: read-only IEX equity data. No orders are supported.")
 
     def run_backtest(self) -> None:
         if not self.alpaca:

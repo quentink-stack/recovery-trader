@@ -1,7 +1,0 @@
-ticker,company,drop_pct,low_hold_pct,iv_percentile,call_open_interest,dte,risk_note
-PGR,Progressive,7.0,86,61,1820,38,"Claims-cost and margin outlook"
-XYZ,Block,8.4,82,72,1240,41,"Consumer-spending sensitivity"
-SBUX,Starbucks,6.1,79,48,2650,35,"Traffic and China-demand risk"
-ROKU,Roku,11.7,65,88,1740,39,"High IV and execution risk"
-C,Citigroup,5.5,90,33,430,44,"Credit-cycle and capital-return risk"
-NKE,Nike,9.2,73,57,980,31,"Guidance and inventory-reset risk"

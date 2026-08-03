@@ -1,15 +1,20 @@
 # Recovery Trader
 
-A local desktop research screener for post-earnings recovery candidates. It defaults to 30–45 DTE and ranks only candidates that meet configurable earnings-drop, implied-volatility, option-liquidity, and DTE constraints.
+A local research screener and strategy lab for sharp single-day equity declines.
 
-## Run
+## Run the web app
 
 ```powershell
 cd 'C:\Users\Quentin\Documents\Personal Projects\git\recovery-trader'
-python app.py
+python -m pip install -r requirements.txt
+python -m streamlit run streamlit_app.py
 ```
 
-No third-party packages are required. Run the app with:
+The app opens in your browser. It is a local, read-only research dashboard and contains no order endpoints.
+
+## Desktop app
+
+The original Tkinter desktop version remains available:
 
 ```powershell
 python app.py
@@ -39,16 +44,14 @@ Create a free Alpaca paper account and paste its API key and secret into `alpaca
 [alpaca]
 api_key = paste your Alpaca paper key here
 api_secret = paste your Alpaca paper secret here
-options_feed = indicative
 equities_feed = iex
 ```
 
 In the desktop app, select **Connect Alpaca Basic**. The integration is read-only and has no order, account, or position endpoints.
 
-- **Load Alpaca chain** loads the selected candidate's 30–45 DTE chain, including quotes and Greeks when available.
 - **Run dip-recovery backtest** downloads two years of daily bars for a ticker and tests a simple proxy: a qualifying close-to-close dip, entry at the next open, a 15-trading-day maximum hold, 10% stop, and 12% target.
 
-The backtest measures **underlying-price returns**, not option P&L, and avoids using the signal day's closing price as an entry. Alpaca Basic uses IEX equities and an indicative options feed, so it is suitable for development and hypothesis testing—not execution-quality pricing.
+The backtest measures underlying-price returns and avoids using the signal day's closing price as an entry. Alpaca Basic's IEX data is suitable for development and hypothesis testing—not execution-quality pricing.
 
 ## Watchlist research and strategy comparison
 

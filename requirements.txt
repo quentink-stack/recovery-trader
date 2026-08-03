@@ -1,1 +1,2 @@
-# No third-party dependencies. OAuth 1.0a signing uses Python's standard library.
+streamlit>=1.48,<2
+pandas>=2.2,<3
