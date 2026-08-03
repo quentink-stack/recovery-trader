@@ -1,0 +1,40 @@
+# Secrets and local credentials — never commit these.
+.env
+.env.*
+!.env.example
+alpaca.ini
+config.ini
+credentials*.json
+secrets*.json
+*debug*.json
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Python environments, caches, and test output.
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local research outputs and downloaded market data.
+exports/
+backtest-results/
+data/cache/
+data/downloads/
+data/*.parquet
+data/*.sqlite
+data/*.db
+
+# Editor and operating-system files.
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,1 @@
+# No third-party dependencies. OAuth 1.0a signing uses Python's standard library.
