@@ -61,4 +61,4 @@ Edit `data/watchlist.csv` to define the tickers you want to research. The applic
 - **Compare strategies** runs all strategies across the complete watchlist and the preceding two years of daily bars.
 - **Run dip-recovery backtest** runs the current bracket strategy against one ticker and shows every proxy trade.
 
-The included strategies are: next-open 15-session hold; 10% stop / 12% target bracket; and a next-day confirmation rule followed by a 15-session hold. Results are pooled across all tickers for comparison. They do not model spreads, commissions, assignment, implied volatility, option decay, or earnings-specific causality.
+The included strategies are: next-open 15-session hold and a 10% stop / 12% target bracket. Results are pooled across all tickers for comparison. They do not model spreads, commissions, assignment, implied volatility, option decay, or earnings-specific causality.

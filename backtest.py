@@ -36,13 +36,11 @@ class Strategy:
     hold_days: int
     stop_loss_pct: float | None = None
     take_profit_pct: float | None = None
-    require_confirmation: bool = False
 
 
 STRATEGIES = (
     Strategy("Hold 15 days", "Enter next open after a dip; exit after 15 sessions.", 15),
     Strategy("Bracket 10/12", "Enter next open; 10% stop, 12% target, or 15-session exit.", 15, 10, 12),
-    Strategy("Confirm then hold", "Require the next close to exceed the dip-day close, then enter next open for 15 sessions.", 15, require_confirmation=True),
 )
 
 
@@ -60,11 +58,6 @@ def run_strategy(bars: list[DailyBar], min_dip_pct: float, strategy: Strategy) -
             index += 1
             continue
         entry_index = index + 1
-        if strategy.require_confirmation:
-            if entry_index >= len(bars) - 1 or bars[entry_index].close <= signal.close:
-                index += 1
-                continue
-            entry_index += 1
         if entry_index >= len(bars):
             break
         entry = bars[entry_index]
