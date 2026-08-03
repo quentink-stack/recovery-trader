@@ -36,11 +36,14 @@ class Strategy:
     hold_days: int
     stop_loss_pct: float | None = None
     take_profit_pct: float | None = None
+    entry_confirmation_pct: float | None = None
 
 
 STRATEGIES = (
     Strategy("Hold 15 days", "Enter next open after a dip; exit after 15 sessions.", 15),
     Strategy("Bracket 10/12", "Enter next open; 10% stop, 12% target, or 15-session exit.", 15, 10, 12),
+    Strategy("Bounce confirmed 10/12", "Require a 2% rebound after entry before trading; then use a 10% stop / 12% target or 15-session exit.", 15, 10, 12, 2.0),
+    Strategy("Fast bounce 8/10", "Require a 1.5% rebound after entry and exit on an 8-session hold, 8% stop, or 10% target.", 8, 8, 10, 1.5),
 )
 
 
@@ -61,6 +64,14 @@ def run_strategy(bars: list[DailyBar], min_dip_pct: float, strategy: Strategy) -
         if entry_index >= len(bars):
             break
         entry = bars[entry_index]
+        if strategy.entry_confirmation_pct is not None:
+            confirmation_index = entry_index + 1
+            if confirmation_index >= len(bars):
+                break
+            confirmation_bar = bars[confirmation_index]
+            if confirmation_bar.close <= entry.open * (1 + strategy.entry_confirmation_pct / 100):
+                index = confirmation_index
+                continue
         exit_index = min(entry_index + strategy.hold_days, len(bars) - 1)
         exit_bar, exit_price, reason = bars[exit_index], bars[exit_index].close, "time exit"
         if strategy.stop_loss_pct is not None and strategy.take_profit_pct is not None:
