@@ -25,3 +25,15 @@ class BacktestStrategyTests(TestCase):
         result = run_strategy(self.make_bars(), 5.0, strategy)
 
         self.assertEqual(result.trades, [])
+
+    def test_breakout_confirmation_strategy_requires_higher_close(self) -> None:
+        strategy = Strategy(
+            name="Breakout confirmation",
+            description="Wait for a higher close after the dip.",
+            hold_days=2,
+            breakout_confirmation=True,
+        )
+
+        result = run_strategy(self.make_bars(), 5.0, strategy)
+
+        self.assertEqual(result.trades, [])
