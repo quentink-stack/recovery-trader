@@ -37,3 +37,23 @@ class BacktestStrategyTests(TestCase):
         result = run_strategy(self.make_bars(), 5.0, strategy)
 
         self.assertEqual(result.trades, [])
+
+    def test_trailing_stop_exits_after_a_high_water_mark_decline(self) -> None:
+        bars = [
+            DailyBar(date(2024, 1, 1), 100.0, 101.0, 99.0, 100.0),
+            DailyBar(date(2024, 1, 2), 100.0, 100.0, 90.0, 90.0),
+            DailyBar(date(2024, 1, 3), 90.0, 100.0, 89.0, 99.0),
+            DailyBar(date(2024, 1, 4), 99.0, 101.0, 90.0, 91.0),
+        ]
+        strategy = Strategy(
+            name="Trailing stop",
+            description="Trail 10% below the high-water mark.",
+            hold_days=3,
+            trailing_stop_pct=10.0,
+        )
+
+        result = run_strategy(bars, 5.0, strategy)
+
+        self.assertEqual(len(result.trades), 1)
+        self.assertEqual(result.trades[0].exit_reason, "trailing stop")
+        self.assertEqual(result.trades[0].exit_price, 90.0)

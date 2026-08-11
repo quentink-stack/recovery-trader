@@ -38,6 +38,7 @@ class Strategy:
     take_profit_pct: float | None = None
     entry_confirmation_pct: float | None = None
     breakout_confirmation: bool = False
+    trailing_stop_pct: float | None = None
 
 
 STRATEGIES = (
@@ -46,6 +47,7 @@ STRATEGIES = (
     Strategy("Bounce confirmed 10/12", "Require a 2% rebound after entry before trading; then use a 10% stop / 12% target or 15-session exit.", 15, 10, 12, 2.0),
     Strategy("Fast bounce 8/10", "Require a 1.5% rebound after entry and exit on an 8-session hold, 8% stop, or 10% target.", 8, 8, 10, 1.5),
     Strategy("Breakout confirmation 10/12", "Wait for the first recovery day to close above the dip day before entering; then use a 10% stop / 12% target or 15-session exit.", 15, 10, 12, None, True),
+    Strategy("Trailing stop 10%", "Enter next open; exit 10% below the highest previously observed price, or after 15 sessions.", 15, trailing_stop_pct=10.0),
 )
 
 
@@ -84,7 +86,16 @@ def run_strategy(bars: list[DailyBar], min_dip_pct: float, strategy: Strategy) -
                 continue
         exit_index = min(entry_index + strategy.hold_days, len(bars) - 1)
         exit_bar, exit_price, reason = bars[exit_index], bars[exit_index].close, "time exit"
-        if strategy.stop_loss_pct is not None and strategy.take_profit_pct is not None:
+        if strategy.trailing_stop_pct is not None:
+            high_water_mark = entry.open
+            for cursor in range(entry_index, exit_index + 1):
+                bar = bars[cursor]
+                trailing_stop = high_water_mark * (1 - strategy.trailing_stop_pct / 100)
+                if bar.low <= trailing_stop:
+                    exit_bar, exit_price, reason = bar, trailing_stop, "trailing stop"
+                    break
+                high_water_mark = max(high_water_mark, bar.high)
+        elif strategy.stop_loss_pct is not None and strategy.take_profit_pct is not None:
             stop, target = entry.open * (1 - strategy.stop_loss_pct / 100), entry.open * (1 + strategy.take_profit_pct / 100)
             for cursor in range(entry_index, exit_index + 1):
                 bar = bars[cursor]

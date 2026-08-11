@@ -12,6 +12,18 @@ python -m streamlit run streamlit_app.py
 
 The app opens in your browser. It is a local, read-only research dashboard and contains no order endpoints.
 
+## S&P 500 screener
+
+The drop screener defaults to the locally stored S&P 500 universe in `data/sp500.csv`. It fetches daily bars in batches of 100 symbols and caches the result for 15 minutes, keeping a typical 60–120-day full-index scan to about five Alpaca historical-data requests rather than roughly 500 individual requests.
+
+Refresh the local constituent list deliberately when needed:
+
+```powershell
+python refresh_sp500.py
+```
+
+The refresh script reads the constituent table from Wikipedia and writes the resulting symbol and company list into `data/sp500.csv`. Review the generated change before committing it; index membership changes over time.
+
 ## Alpaca Basic research mode
 
 Create a free Alpaca paper account and paste its API key and secret into `alpaca.ini`. This file is ignored by Git.
@@ -37,4 +49,4 @@ Edit `data/watchlist.csv` to define the tickers you want to research. The applic
 - **Compare strategies** runs all strategies across the complete watchlist and the preceding two years of daily bars.
 - **Run dip-recovery backtest** runs the current bracket strategy against one ticker and shows every proxy trade.
 
-The included strategies are: next-open 15-session hold and a 10% stop / 12% target bracket. Results are pooled across all tickers for comparison. They do not model spreads, commissions, assignment, implied volatility, option decay, or earnings-specific causality.
+The included strategies include fixed 15-session holds, bracket exits, rebound or breakout confirmation rules, and a 10% trailing-stop exit. The trailing stop begins at the entry price and updates only after each completed daily bar, so it does not assume an intraday high occurred before an intraday low. Results are pooled across all tickers for comparison. They do not model spreads, commissions, assignment, implied volatility, option decay, or earnings-specific causality.

@@ -15,12 +15,19 @@ from screener import latest_large_drop, load_watchlist
 
 ROOT = Path(__file__).parent
 WATCHLIST = ROOT / "data" / "watchlist.csv"
+SP500 = ROOT / "data" / "sp500.csv"
 
 st.set_page_config(page_title="Recovery Trader", page_icon="📉", layout="wide")
 
 
+@st.cache_resource
 def client() -> AlpacaMarketData:
     return AlpacaMarketData.from_config()
+
+
+@st.cache_data(ttl="15m", max_entries=16, show_spinner=False)
+def load_daily_bars(tickers: tuple[str, ...], start: date, end: date) -> dict[str, list]:
+    return client().daily_bars_for_symbols(tickers, start, end)
 
 
 def user_error(exc: Exception) -> str:
@@ -42,22 +49,28 @@ def configure_sidebar() -> float:
 
 def screen_page(min_drop: float) -> None:
     st.title("Large single-day drop screener")
-    st.caption("Finds the most recent qualifying close-to-close decline per watchlist ticker within the selected lookback.")
+    st.caption("Finds the most recent qualifying close-to-close decline in the selected local ticker universe.")
+    universe_name = st.segmented_control("Universe", ["My watchlist", "S&P 500"], default="S&P 500", selection_mode="single")
     days = st.select_slider("Lookback", options=[60, 90, 120, 180, 252], value=120, format_func=lambda value: f"{value} calendar days")
-    if st.button("Screen watchlist", type="primary"):
+    universe_path = SP500 if universe_name == "S&P 500" else WATCHLIST
+    button_label = "Screen S&P 500" if universe_name == "S&P 500" else "Screen watchlist"
+    if st.button(button_label, type="primary"):
         try:
-            market_data = client()
-            watchlist = load_watchlist(WATCHLIST)
+            watchlist = load_watchlist(universe_path)
+            if not watchlist:
+                raise ValueError(f"{universe_path.name} does not contain any tickers.")
             research = []
-            progress = st.progress(0, text="Loading daily bars…")
-            for index, item in enumerate(watchlist, start=1):
-                bars = market_data.daily_bars(item.ticker, date.today() - timedelta(days=days), date.today())
+            progress = st.progress(10, text=f"Loading {len(watchlist)} symbols in Alpaca batches…")
+            bars_by_ticker = load_daily_bars(tuple(item.ticker for item in watchlist), date.today() - timedelta(days=days), date.today())
+            progress.progress(75, text="Screening for qualifying drops…")
+            for item in watchlist:
+                bars = bars_by_ticker.get(item.ticker, [])
                 result = latest_large_drop(item, bars, min_drop)
                 if result:
                     research.append(result)
-                progress.progress(index / len(watchlist), text=f"Screening {item.ticker} ({index}/{len(watchlist)})")
             progress.empty()
             st.session_state["screen_results"] = research
+            st.session_state["screen_scope"] = universe_name
         except Exception as exc:
             st.error(user_error(exc))
     results = st.session_state.get("screen_results", [])
@@ -67,7 +80,8 @@ def screen_page(min_drop: float) -> None:
             "One-day drop": item.drop_pct / 100, "Signal close": item.signal_close,
             "Latest close": item.latest_close, "Since-signal return": item.recovery_pct / 100,
         } for item in results]).sort_values("One-day drop")
-        st.dataframe(frame, hide_index=True, use_container_width=True, column_config={
+        st.caption(f"{st.session_state.get('screen_scope', 'Selected universe')}: {len(results)} qualifying symbols. Daily bars are cached for 15 minutes.")
+        st.dataframe(frame, hide_index=True, column_config={
             "One-day drop": st.column_config.NumberColumn(format="%.2f%%"),
             "Since-signal return": st.column_config.NumberColumn(format="%.2f%%"),
             "Signal close": st.column_config.NumberColumn(format="$%.2f"),
@@ -117,12 +131,12 @@ def backtest_page(min_drop: float) -> None:
             summary.append({"Strategy": strategy.name, "Trades": len(trades), "Win rate": (sum(t.return_pct > 0 for t in trades) / len(trades) if trades else 0), "Average return": (sum(t.return_pct for t in trades) / len(trades) / 100 if trades else 0), "Rules": strategy.description})
         summary_frame = pd.DataFrame(summary)
         st.subheader(f"{st.session_state.get('backtest_scope', 'Results')} results")
-        st.dataframe(summary_frame, hide_index=True, use_container_width=True, column_config={"Win rate": st.column_config.NumberColumn(format="%.1f%%"), "Average return": st.column_config.NumberColumn(format="%.2f%%")})
+        st.dataframe(summary_frame, hide_index=True, column_config={"Win rate": st.column_config.NumberColumn(format="%.1f%%"), "Average return": st.column_config.NumberColumn(format="%.2f%%")})
         selected_strategy = st.selectbox("Inspect trades", [strategy.name for strategy in STRATEGIES])
         trades = results[selected_strategy]
         if trades:
             frame = pd.DataFrame([{"Entry": t.entry_day, "Exit": t.exit_day, "Entry price": t.entry_price, "Exit price": t.exit_price, "Return": t.return_pct / 100, "Exit reason": t.exit_reason} for t in trades])
-            st.dataframe(frame, hide_index=True, use_container_width=True, column_config={"Entry price": st.column_config.NumberColumn(format="$%.2f"), "Exit price": st.column_config.NumberColumn(format="$%.2f"), "Return": st.column_config.NumberColumn(format="%.2f%%")})
+            st.dataframe(frame, hide_index=True, column_config={"Entry price": st.column_config.NumberColumn(format="$%.2f"), "Exit price": st.column_config.NumberColumn(format="$%.2f"), "Return": st.column_config.NumberColumn(format="%.2f%%")})
         else:
             st.info("This strategy generated no trades in the selected history.")
 
