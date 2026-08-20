@@ -49,7 +49,7 @@ def configure_sidebar() -> float:
 
 def screen_page(min_drop: float) -> None:
     st.title("Large single-day drop screener")
-    st.caption("Finds the most recent qualifying close-to-close decline in the selected local ticker universe.")
+    st.caption("Finds the most recent qualifying close-to-close decline and its first available closing prices one week and 30 days later.")
     universe_name = st.segmented_control("Universe", ["My watchlist", "S&P 500"], default="S&P 500", selection_mode="single")
     days = st.select_slider("Lookback", options=[60, 90, 120, 180, 252], value=120, format_func=lambda value: f"{value} calendar days")
     universe_path = SP500 if universe_name == "S&P 500" else WATCHLIST
@@ -74,18 +74,23 @@ def screen_page(min_drop: float) -> None:
         except Exception as exc:
             st.error(user_error(exc))
     results = st.session_state.get("screen_results", [])
+    if results and not all(hasattr(item, "one_week_close") and hasattr(item, "thirty_day_close") for item in results):
+        st.session_state.pop("screen_results", None)
+        st.session_state.pop("screen_scope", None)
+        results = []
+        st.info("Saved results used the prior screener format. Run a fresh screen to see the 1-week and 30-day closing prices.")
     if results:
         frame = pd.DataFrame([{
             "Ticker": item.ticker, "Company": item.company, "Drop date": item.signal_day,
             "One-day drop": item.drop_pct / 100, "Signal close": item.signal_close,
-            "Latest close": item.latest_close, "Since-signal return": item.recovery_pct / 100,
+            "1-week close": item.one_week_close, "30-day close": item.thirty_day_close,
         } for item in results]).sort_values("One-day drop")
         st.caption(f"{st.session_state.get('screen_scope', 'Selected universe')}: {len(results)} qualifying symbols. Daily bars are cached for 15 minutes.")
         st.dataframe(frame, hide_index=True, column_config={
             "One-day drop": st.column_config.NumberColumn(format="%.2f%%"),
-            "Since-signal return": st.column_config.NumberColumn(format="%.2f%%"),
             "Signal close": st.column_config.NumberColumn(format="$%.2f"),
-            "Latest close": st.column_config.NumberColumn(format="$%.2f"),
+            "1-week close": st.column_config.NumberColumn(format="$%.2f"),
+            "30-day close": st.column_config.NumberColumn(format="$%.2f"),
         })
         st.download_button("Download screener CSV", frame.to_csv(index=False), "drop_screener.csv", "text/csv")
     elif "screen_results" in st.session_state:
