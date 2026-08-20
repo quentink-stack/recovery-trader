@@ -92,13 +92,23 @@ def screen_page(min_drop: float) -> None:
             "Ticker": item.ticker, "Company": item.company, "Drop date": item.signal_day,
             "One-day drop": item.drop_pct, "Signal close": item.signal_close,
             "1-week close": item.one_week_close, "30-day close": item.thirty_day_close,
+            "30 day % change": item.thirty_day_pct_change,
         } for item in results]).sort_values("One-day drop")
         st.caption(f"{st.session_state.get('screen_scope', 'Selected universe')}: {len(results)} qualifying symbols. Daily bars are cached for 15 minutes.")
-        st.dataframe(frame, hide_index=True, column_config={
+        styled_frame = frame.style.apply(
+            lambda column: [
+                "color: green; font-weight: 600" if pd.notna(value) and value > 0 else
+                "color: red; font-weight: 600" if pd.notna(value) and value < 0 else
+                "" for value in column
+            ],
+            subset=["30 day % change"],
+        )
+        st.dataframe(styled_frame, hide_index=True, column_config={
             "One-day drop": st.column_config.NumberColumn(format="%.2f%%"),
             "Signal close": st.column_config.NumberColumn(format="$%.2f"),
             "1-week close": st.column_config.NumberColumn(format="$%.2f"),
             "30-day close": st.column_config.NumberColumn(format="$%.2f"),
+            "30 day % change": st.column_config.NumberColumn(format="%.2f%%"),
         })
         st.download_button("Download screener CSV", frame.to_csv(index=False), "drop_screener.csv", "text/csv")
     elif "screen_results" in st.session_state:

@@ -22,6 +22,7 @@ class DropResearchTests(TestCase):
         self.assertEqual(result.signal_close, 90)
         self.assertEqual(result.one_week_close, 94)
         self.assertEqual(result.thirty_day_close, 97)
+        self.assertAlmostEqual(result.thirty_day_pct_change, 7.777777777777779)
 
     def test_leaves_unavailable_checkpoints_blank(self) -> None:
         bars = [
@@ -35,3 +36,4 @@ class DropResearchTests(TestCase):
         assert result is not None
         self.assertIsNone(result.one_week_close)
         self.assertIsNone(result.thirty_day_close)
+        self.assertIsNone(result.thirty_day_pct_change)

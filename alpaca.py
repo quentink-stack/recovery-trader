@@ -49,7 +49,7 @@ class AlpacaMarketData:
             return json.loads(response.read().decode("utf-8"))
 
     def daily_bars(self, ticker: str, start: date, end: date) -> list[DailyBar]:
-        data = self._get_json(f"/v2/stocks/{ticker.upper()}/bars", {"timeframe": "1Day", "start": start.isoformat(), "end": end.isoformat(), "adjustment": "raw", "feed": self.equities_feed, "limit": 10000})
+        data = self._get_json(f"/v2/stocks/{ticker.upper()}/bars", {"timeframe": "1Day", "start": start.isoformat(), "end": end.isoformat(), "adjustment": "all", "feed": self.equities_feed, "limit": 10000})
         return [DailyBar(datetime.fromisoformat(item["t"].replace("Z", "+00:00")).date(), float(item["o"]), float(item["h"]), float(item["l"]), float(item["c"])) for item in data.get("bars", [])]
 
     def daily_bars_for_symbols(self, tickers: list[str] | tuple[str, ...], start: date, end: date, batch_size: int = 100) -> dict[str, list[DailyBar]]:
@@ -65,7 +65,7 @@ class AlpacaMarketData:
                     "timeframe": "1Day",
                     "start": start.isoformat(),
                     "end": end.isoformat(),
-                    "adjustment": "raw",
+                    "adjustment": "all",
                     "feed": self.equities_feed,
                     "limit": 10000,
                 }

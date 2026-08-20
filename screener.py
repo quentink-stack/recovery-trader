@@ -25,6 +25,7 @@ class DropResearch:
     signal_close: float
     one_week_close: float | None
     thirty_day_close: float | None
+    thirty_day_pct_change: float | None
 
 
 def load_watchlist(path: Path) -> list[WatchlistItem]:
@@ -40,6 +41,7 @@ def latest_large_drop(item: WatchlistItem, bars: list[DailyBar], minimum_drop_pc
         prior, signal = bars[index - 1], bars[index]
         drop_pct = (signal.close / prior.close - 1) * 100
         if drop_pct <= -minimum_drop_pct:
+            thirty_day_close = close_on_or_after(bars[index + 1:], signal.day + timedelta(days=30))
             return DropResearch(
                 item.ticker,
                 item.company,
@@ -47,9 +49,17 @@ def latest_large_drop(item: WatchlistItem, bars: list[DailyBar], minimum_drop_pc
                 drop_pct,
                 signal.close,
                 close_on_or_after(bars[index + 1:], signal.day + timedelta(days=7)),
-                close_on_or_after(bars[index + 1:], signal.day + timedelta(days=30)),
+                thirty_day_close,
+                percent_change(signal.close, thirty_day_close) if thirty_day_close is not None else None,
             )
     return None
+
+
+def percent_change(start_price: float, end_price: float | None) -> float | None:
+    """Return the percentage change from a starting price to a later price, or None if missing."""
+    if end_price is None:
+        return None
+    return ((end_price - start_price) / start_price) * 100
 
 
 def close_on_or_after(bars: list[DailyBar], target_day: date) -> float | None:
