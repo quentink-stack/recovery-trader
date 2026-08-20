@@ -16,6 +16,7 @@ from screener import latest_large_drop, load_watchlist
 ROOT = Path(__file__).parent
 WATCHLIST = ROOT / "data" / "watchlist.csv"
 SP500 = ROOT / "data" / "sp500.csv"
+SCREEN_DATA_VERSION = "adjusted-bars-v1"
 
 st.set_page_config(page_title="Recovery Trader", page_icon="📉", layout="wide")
 
@@ -26,7 +27,8 @@ def client() -> AlpacaMarketData:
 
 
 @st.cache_data(ttl="15m", max_entries=16, show_spinner=False)
-def load_daily_bars(tickers: tuple[str, ...], start: date, end: date) -> dict[str, list]:
+def load_daily_bars(tickers: tuple[str, ...], start: date, end: date, data_version: str) -> dict[str, list]:
+    """Load a versioned data set; data_version is part of the Streamlit cache key."""
     return client().daily_bars_for_symbols(tickers, start, end)
 
 
@@ -61,7 +63,7 @@ def screen_page(min_drop: float) -> None:
                 raise ValueError(f"{universe_path.name} does not contain any tickers.")
             research = []
             progress = st.progress(10, text=f"Loading {len(watchlist)} symbols in Alpaca batches…")
-            bars_by_ticker = load_daily_bars(tuple(item.ticker for item in watchlist), date.today() - timedelta(days=days), date.today())
+            bars_by_ticker = load_daily_bars(tuple(item.ticker for item in watchlist), date.today() - timedelta(days=days), date.today(), SCREEN_DATA_VERSION)
             progress.progress(75, text="Screening for qualifying drops…")
             for item in watchlist:
                 bars = bars_by_ticker.get(item.ticker, [])
@@ -71,18 +73,24 @@ def screen_page(min_drop: float) -> None:
             progress.empty()
             st.session_state["screen_results"] = research
             st.session_state["screen_scope"] = universe_name
+            st.session_state["screen_data_version"] = SCREEN_DATA_VERSION
         except Exception as exc:
             st.error(user_error(exc))
     results = st.session_state.get("screen_results", [])
-    if results and not all(hasattr(item, "one_week_close") and hasattr(item, "thirty_day_close") for item in results):
+    results_are_current = (
+        st.session_state.get("screen_data_version") == SCREEN_DATA_VERSION
+        and all(hasattr(item, "one_week_close") and hasattr(item, "thirty_day_close") for item in results)
+    )
+    if results and not results_are_current:
         st.session_state.pop("screen_results", None)
         st.session_state.pop("screen_scope", None)
+        st.session_state.pop("screen_data_version", None)
         results = []
-        st.info("Saved results used the prior screener format. Run a fresh screen to see the 1-week and 30-day closing prices.")
+        st.info("Saved results used a prior market-data format. Run a fresh screen to use corporate-action-adjusted prices.")
     if results:
         frame = pd.DataFrame([{
             "Ticker": item.ticker, "Company": item.company, "Drop date": item.signal_day,
-            "One-day drop": item.drop_pct / 100, "Signal close": item.signal_close,
+            "One-day drop": item.drop_pct, "Signal close": item.signal_close,
             "1-week close": item.one_week_close, "30-day close": item.thirty_day_close,
         } for item in results]).sort_values("One-day drop")
         st.caption(f"{st.session_state.get('screen_scope', 'Selected universe')}: {len(results)} qualifying symbols. Daily bars are cached for 15 minutes.")

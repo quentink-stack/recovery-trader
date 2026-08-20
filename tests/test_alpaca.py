@@ -20,9 +20,16 @@ class AlpacaBatchBarsTests(TestCase):
                 },
             },
         ])
-        client._get_json = lambda path, params: next(responses)  # type: ignore[method-assign]
+        requests: list[tuple[str, dict]] = []
+
+        def fake_get_json(path: str, params: dict) -> dict:
+            requests.append((path, params))
+            return next(responses)
+
+        client._get_json = fake_get_json  # type: ignore[method-assign]
 
         bars = client.daily_bars_for_symbols(["aaa", "BBB"], date(2024, 1, 1), date(2024, 1, 3), batch_size=2)
 
         self.assertEqual(bars["AAA"][0].close, 10.5)
         self.assertEqual(bars["BBB"][0].close, 20.5)
+        self.assertTrue(all(params["adjustment"] == "all" for _, params in requests))

@@ -18,6 +18,7 @@ class DropResearchTests(TestCase):
 
         self.assertIsNotNone(result)
         assert result is not None
+        self.assertAlmostEqual(result.drop_pct, -10.0)
         self.assertEqual(result.signal_close, 90)
         self.assertEqual(result.one_week_close, 94)
         self.assertEqual(result.thirty_day_close, 97)
