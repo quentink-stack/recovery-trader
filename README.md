@@ -32,6 +32,8 @@ The reusable client is in `ollama_client.py`. It provides `is_available()` for a
 
 The first research data source is the public Google News RSS search feed. `recovery_trader/integrations/news.py` returns normalized article titles, publishers, links, and publication timestamps without requiring another API key.
 
+`ResearchService.collect()` combines those articles with recent Alpaca daily bars into a normalized, JSON-serializable `ResearchContext`. This context is the input boundary for the next step: building the structured Ollama prompt and validated research report.
+
 ## S&P 500 screener
 
 The drop screener defaults to the locally stored S&P 500 universe in `data/sp500.csv`. It fetches daily bars in batches of 100 symbols and caches the result for 15 minutes, keeping a typical 60–120-day full-index scan to about five Alpaca historical-data requests rather than roughly 500 individual requests.
