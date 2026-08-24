@@ -14,18 +14,18 @@ The app opens in your browser. It is a local, read-only research dashboard and c
 
 ## Local Ollama connectivity
 
-The research client connects to Ollama at `http://localhost:11434` by default and uses the `qwen2.5:7b` model. Install and start Ollama, then pull a model before using the future ticker research workflow:
+The research client connects to Ollama at `http://localhost:11434` by default and uses the `qwen3:8b-q4_K_M` model. Install and start Ollama, then pull a model before using the future ticker research workflow:
 
 ```powershell
 ollama serve
-ollama pull qwen2.5:7b
+ollama pull qwen3:8b-q4_K_M
 ```
 
 Override the defaults with environment variables when needed:
 
 ```powershell
 $env:OLLAMA_BASE_URL = 'http://localhost:11434'
-$env:OLLAMA_MODEL = 'qwen2.5:7b'
+$env:OLLAMA_MODEL = 'qwen3:8b-q4_K_M'
 ```
 
 The reusable client is in `ollama_client.py`. It provides `is_available()` for a health check and `generate()` for non-streaming model responses. JSON mode is enabled by default for the structured research report planned below.
