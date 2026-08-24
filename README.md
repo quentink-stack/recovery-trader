@@ -12,6 +12,24 @@ python -m streamlit run streamlit_app.py
 
 The app opens in your browser. It is a local, read-only research dashboard and contains no order endpoints.
 
+## Local Ollama connectivity
+
+The research client connects to Ollama at `http://localhost:11434` by default and uses the `qwen2.5:7b` model. Install and start Ollama, then pull a model before using the future ticker research workflow:
+
+```powershell
+ollama serve
+ollama pull qwen2.5:7b
+```
+
+Override the defaults with environment variables when needed:
+
+```powershell
+$env:OLLAMA_BASE_URL = 'http://localhost:11434'
+$env:OLLAMA_MODEL = 'qwen2.5:7b'
+```
+
+The reusable client is in `ollama_client.py`. It provides `is_available()` for a health check and `generate()` for non-streaming model responses. JSON mode is enabled by default for the structured research report planned below.
+
 ## S&P 500 screener
 
 The drop screener defaults to the locally stored S&P 500 universe in `data/sp500.csv`. It fetches daily bars in batches of 100 symbols and caches the result for 15 minutes, keeping a typical 60–120-day full-index scan to about five Alpaca historical-data requests rather than roughly 500 individual requests.
@@ -37,7 +55,7 @@ equities_feed = iex
 
 The Streamlit app reads Alpaca Basic market data only; it has no order, account, or position endpoints.
 
-- **Run dip-recovery backtest** downloads two years of daily bars for a ticker and tests a simple proxy: a qualifying close-to-close dip, entry at the next open, a 15-trading-day maximum hold, 10% stop, and 12% target.
+- **Run dip-recovery backtest** downloads two years of daily bars for a ticker and tests a simple proxy: a qualifying drop from one session's close to the next session's close, entry at the following open, a 15-trading-day maximum hold, 10% stop, and 12% target.
 
 The backtest measures underlying-price returns and avoids using the signal day's closing price as an entry. Alpaca Basic's IEX data is suitable for development and hypothesis testing—not execution-quality pricing.
 
@@ -45,8 +63,4 @@ The backtest measures underlying-price returns and avoids using the signal day's
 
 Edit `data/watchlist.csv` to define the tickers you want to research. The application includes three watchlist tools:
 
-- **Screen watchlist drops** finds each ticker's most recent qualifying close-to-close decline within a 120-calendar-day lookback and shows its subsequent return to the latest available close.
-- **Compare strategies** runs all strategies across the complete watchlist and the preceding two years of daily bars.
-- **Run dip-recovery backtest** runs the current bracket strategy against one ticker and shows every proxy trade.
-
-The included strategies include fixed 15-session holds, bracket exits, rebound or breakout confirmation rules, and a 10% trailing-stop exit. The trailing stop begins at the entry price and updates only after each completed daily bar, so it does not assume an intraday high occurred before an intraday low. Results are pooled across all tickers for comparison. They do not model spreads, commissions, assignment, implied volatility, option decay, or earnings-specific causality.
+- **Screen watchlist drops** finds each ticker's most recent qualifying next-session close-to-close decline within a 120-calendar-day lookback and shows its subsequent return to the latest available close.

@@ -18,11 +18,12 @@ class DropResearchTests(TestCase):
 
         self.assertIsNotNone(result)
         assert result is not None
+        self.assertEqual(result.signal_day, "2024-01-01")
         self.assertAlmostEqual(result.drop_pct, -10.0)
-        self.assertEqual(result.signal_close, 90)
+        self.assertEqual(result.signal_close, 100)
         self.assertEqual(result.one_week_close, 94)
         self.assertEqual(result.thirty_day_close, 97)
-        self.assertAlmostEqual(result.thirty_day_pct_change, 7.777777777777779)
+        self.assertAlmostEqual(result.thirty_day_pct_change, -3.0)
 
     def test_leaves_unavailable_checkpoints_blank(self) -> None:
         bars = [

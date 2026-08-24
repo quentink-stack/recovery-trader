@@ -1,0 +1,1 @@
+"""Recovery Trader application package."""
