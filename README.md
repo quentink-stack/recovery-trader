@@ -30,6 +30,8 @@ $env:OLLAMA_MODEL = 'qwen2.5:7b'
 
 The reusable client is in `ollama_client.py`. It provides `is_available()` for a health check and `generate()` for non-streaming model responses. JSON mode is enabled by default for the structured research report planned below.
 
+The first research data source is the public Google News RSS search feed. `recovery_trader/integrations/news.py` returns normalized article titles, publishers, links, and publication timestamps without requiring another API key.
+
 ## S&P 500 screener
 
 The drop screener defaults to the locally stored S&P 500 universe in `data/sp500.csv`. It fetches daily bars in batches of 100 symbols and caches the result for 15 minutes, keeping a typical 60–120-day full-index scan to about five Alpaca historical-data requests rather than roughly 500 individual requests.
