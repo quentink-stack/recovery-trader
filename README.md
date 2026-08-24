@@ -34,6 +34,10 @@ The first research data source is the public Google News RSS search feed. `recov
 
 `ResearchService.collect()` combines those articles with recent Alpaca daily bars into a normalized, JSON-serializable `ResearchContext`. This context is the input boundary for the next step: building the structured Ollama prompt and validated research report.
 
+`recovery_trader/research/report.py` builds that prompt and parses the Qwen response into a `ResearchReport`. The report requires market, earnings, news, macro, regulation, and sentiment assessments. Its 0–100 score is calculated by Python from those ratings rather than accepted from the model.
+
+The Streamlit app now includes a **Ticker research** section. Enter a symbol and select **Research ticker** to collect recent Alpaca prices and Google News articles, generate a Qwen3 report, and view the score, category evidence, catalysts, risks, uncertainties, and source links.
+
 ## S&P 500 screener
 
 The drop screener defaults to the locally stored S&P 500 universe in `data/sp500.csv`. It fetches daily bars in batches of 100 symbols and caches the result for 15 minutes, keeping a typical 60–120-day full-index scan to about five Alpaca historical-data requests rather than roughly 500 individual requests.
