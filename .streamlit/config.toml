@@ -1,0 +1,45 @@
+# Material-inspired dark theme for Recovery Trader.
+[theme]
+base = "dark"
+primaryColor = "#6750A4"
+backgroundColor = "#141218"
+secondaryBackgroundColor = "#211F26"
+textColor = "#E6E0E9"
+linkColor = "#D0BCFF"
+codeBackgroundColor = "#211F26"
+codeTextColor = "#E6E0E9"
+borderColor = "#49454F"
+dataframeBorderColor = "#49454F"
+dataframeHeaderBackgroundColor = "#2B2930"
+
+font = "Roboto:https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap"
+headingFont = "Roboto:https://fonts.googleapis.com/css2?family=Roboto:wght@500;700&display=swap"
+codeFont = "Roboto Mono:https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500&display=swap"
+baseFontSize = 15
+headingFontSizes = ["32px", "26px", "21px", "18px", "16px", "14px"]
+headingFontWeights = [700, 700, 500, 500, 500, 500]
+linkUnderline = false
+
+baseRadius = "large"
+buttonRadius = "full"
+showWidgetBorder = true
+showSidebarBorder = true
+
+blueColor = "#9CCAFF"
+greenColor = "#86E8AC"
+yellowColor = "#FFE08A"
+orangeColor = "#FFB77D"
+redColor = "#FFB4AB"
+violetColor = "#D0BCFF"
+grayColor = "#CAC4D0"
+
+chartCategoricalColors = ["#D0BCFF", "#9CCAFF", "#86E8AC", "#FFE08A", "#FFB4AB", "#FFB77D", "#CAC4D0"]
+chartSequentialColors = ["#211F26", "#2B2737", "#40385A", "#554777", "#6750A4", "#8069BC", "#9A82D8", "#B59AF3", "#D0BCFF", "#E9DDFF"]
+
+[theme.sidebar]
+backgroundColor = "#1D1B20"
+secondaryBackgroundColor = "#2B2930"
+codeBackgroundColor = "#211F26"
+textColor = "#E6E0E9"
+borderColor = "#49454F"
+primaryColor = "#D0BCFF"

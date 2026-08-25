@@ -80,7 +80,10 @@ def parse_report(raw_response: str, ticker: str) -> ResearchReport:
 
     raw_categories = payload.get("score_categories")
     if not isinstance(raw_categories, dict):
-        raise ValueError(f"Ollama report must contain these categories: {', '.join(CATEGORIES)}.")
+        # Smaller local models sometimes emit the category objects at the JSON
+        # root instead of nesting them below score_categories. Treat that as a
+        # recoverable schema variation rather than discarding the full report.
+        raw_categories = {category: payload[category] for category in CATEGORIES if category in payload}
     normalized_categories = {str(category).strip().lower(): value for category, value in raw_categories.items()}
     missing_categories = set(CATEGORIES) - set(normalized_categories)
     assessments: dict[str, CategoryAssessment] = {}

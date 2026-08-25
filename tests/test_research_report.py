@@ -66,6 +66,23 @@ class ResearchReportTests(TestCase):
         self.assertEqual(report.assessments["macro"].evidence, "The local model did not provide an assessment for this category.")
         self.assertIn("The local model did not assess: Macro.", report.uncertainties)
 
+    def test_top_level_or_omitted_category_container_is_recovered(self) -> None:
+        top_level_payload = self.report_payload()
+        top_level_payload.update(top_level_payload.pop("score_categories"))
+
+        top_level_report = parse_report(json.dumps(top_level_payload), "TEST")
+        self.assertEqual(top_level_report.score, 50)
+
+        no_categories_payload = self.report_payload()
+        no_categories_payload.pop("score_categories")
+        no_categories_report = parse_report(json.dumps(no_categories_payload), "TEST")
+
+        self.assertTrue(all(item.rating == "neutral" for item in no_categories_report.assessments.values()))
+        self.assertIn(
+            "The local model did not assess: Market, Earnings, News, Macro, Regulation, Sentiment.",
+            no_categories_report.uncertainties,
+        )
+
     def test_extra_model_metadata_and_category_casing_are_tolerated(self) -> None:
         payload = self.report_payload()
         payload["score_categories"]["Market outlook"] = {"rating": "positive", "evidence": "Extra metadata."}
