@@ -17,7 +17,6 @@ from recovery_trader.research.report import ResearchReport, generate_report
 from recovery_trader.research.service import ResearchService
 
 ROOT = Path(__file__).parents[2]
-WATCHLIST = ROOT / "data" / "watchlist.csv"
 SP500 = ROOT / "data" / "sp500.csv"
 SCREEN_DATA_VERSION = "adjusted-bars-v1"
 
@@ -70,20 +69,20 @@ def configure_sidebar() -> float:
 def screen_page(min_drop: float) -> None:
     st.title("Large single-day drop screener")
     st.caption("Finds the most recent qualifying decline from one session's close to the next session's close, then shows closing prices one week and 30 days later.")
-    universe_name = st.segmented_control("Universe", ["My watchlist", "S&P 500"], default="S&P 500", selection_mode="single")
+    universe_name = "S&P 500"
     days = st.select_slider("Lookback", options=[60, 90, 120, 180, 252], value=120, format_func=lambda value: f"{value} calendar days")
-    universe_path = SP500 if universe_name == "S&P 500" else WATCHLIST
-    button_label = "Screen S&P 500" if universe_name == "S&P 500" else "Screen watchlist"
+    universe_path = SP500
+    button_label = "Screen S&P 500"
     if st.button(button_label, type="primary"):
         try:
-            watchlist = load_watchlist(universe_path)
-            if not watchlist:
+            constituents = load_watchlist(universe_path)
+            if not constituents:
                 raise ValueError(f"{universe_path.name} does not contain any tickers.")
             research = []
-            progress = st.progress(10, text=f"Loading {len(watchlist)} symbols in Alpaca batches…")
-            bars_by_ticker = load_daily_bars(tuple(item.ticker for item in watchlist), date.today() - timedelta(days=days), date.today(), SCREEN_DATA_VERSION)
+            progress = st.progress(10, text=f"Loading {len(constituents)} symbols in Alpaca batches…")
+            bars_by_ticker = load_daily_bars(tuple(item.ticker for item in constituents), date.today() - timedelta(days=days), date.today(), SCREEN_DATA_VERSION)
             progress.progress(75, text="Screening for qualifying drops…")
-            for item in watchlist:
+            for item in constituents:
                 result = latest_large_drop(item, bars_by_ticker.get(item.ticker, []), min_drop)
                 if result:
                     research.append(result)
@@ -113,7 +112,7 @@ def screen_page(min_drop: float) -> None:
         st.dataframe(styled_frame, hide_index=True, column_config={"One-day drop": st.column_config.NumberColumn(format="%.2f%%"), "Signal close": st.column_config.NumberColumn(format="$%.2f"), "1-week close": st.column_config.NumberColumn(format="$%.2f"), "30-day close": st.column_config.NumberColumn(format="$%.2f"), "30 day % change": st.column_config.NumberColumn(format="%.2f%%")})
         st.download_button("Download screener CSV", frame.to_csv(index=False), "drop_screener.csv", "text/csv")
     elif "screen_results" in st.session_state:
-        st.info("No current watchlist ticker had a qualifying drop in that lookback window.")
+        st.info("No S&P 500 ticker had a qualifying drop in that lookback window.")
 
 
 def display_report(report: ResearchReport) -> None:

@@ -67,8 +67,3 @@ The Streamlit app reads Alpaca Basic market data only; it has no order, account,
 
 The backtest measures underlying-price returns and avoids using the signal day's closing price as an entry. Alpaca Basic's IEX data is suitable for development and hypothesis testing—not execution-quality pricing.
 
-## Watchlist research and strategy comparison
-
-Edit `data/watchlist.csv` to define the tickers you want to research. The application includes three watchlist tools:
-
-- **Screen watchlist drops** finds each ticker's most recent qualifying next-session close-to-close decline within a 120-calendar-day lookback and shows its subsequent return to the latest available close.

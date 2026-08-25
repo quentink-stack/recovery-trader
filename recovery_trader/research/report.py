@@ -11,6 +11,13 @@ from recovery_trader.research.context import ResearchContext
 
 CATEGORIES = ("market", "earnings", "news", "macro", "regulation", "sentiment")
 RATING_VALUES = {"negative": 0, "neutral": 50, "positive": 100}
+RATING_ALIASES = {
+    "bearish": "negative",
+    "bullish": "positive",
+    "mixed": "neutral",
+    "uncertain": "neutral",
+    "unknown": "neutral",
+}
 
 
 @dataclass(frozen=True)
@@ -81,9 +88,18 @@ def parse_report(raw_response: str, ticker: str) -> ResearchReport:
     assessments: dict[str, CategoryAssessment] = {}
     for category in CATEGORIES:
         item = normalized_categories[category]
-        if not isinstance(item, dict) or item.get("rating") not in RATING_VALUES or not isinstance(item.get("evidence"), str) or not item["evidence"].strip():
+        if not isinstance(item, dict):
             raise ValueError(f"Invalid Ollama assessment for {category}.")
-        assessments[category] = CategoryAssessment(item["rating"], item["evidence"].strip())
+        rating = str(item.get("rating", "")).strip().lower()
+        rating = RATING_ALIASES.get(rating, rating)
+        evidence = item.get("evidence")
+        if isinstance(evidence, list):
+            evidence = "; ".join(str(value).strip() for value in evidence if str(value).strip())
+        elif not isinstance(evidence, str):
+            evidence = ""
+        if rating not in RATING_VALUES or not evidence.strip():
+            raise ValueError(f"Invalid Ollama assessment for {category}.")
+        assessments[category] = CategoryAssessment(rating, evidence.strip())
 
     summary = payload.get("summary")
     if not isinstance(summary, str) or not summary.strip():

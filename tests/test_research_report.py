@@ -69,3 +69,12 @@ class ResearchReportTests(TestCase):
         report = parse_report(json.dumps(payload), "TEST")
 
         self.assertEqual(report.score, 50)
+
+    def test_common_model_rating_aliases_and_list_evidence_are_normalized(self) -> None:
+        payload = self.report_payload()
+        payload["score_categories"]["news"] = {"rating": "mixed", "evidence": ["Headline one", "Headline two"]}
+
+        report = parse_report(json.dumps(payload), "TEST")
+
+        self.assertEqual(report.assessments["news"].rating, "neutral")
+        self.assertEqual(report.assessments["news"].evidence, "Headline one; Headline two")
