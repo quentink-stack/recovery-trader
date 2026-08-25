@@ -10,7 +10,8 @@ class DropResearchTests(TestCase):
         bars = [
             DailyBar(date(2024, 1, 1), 100, 101, 99, 100),
             DailyBar(date(2024, 1, 2), 100, 100, 90, 90),
-            DailyBar(date(2024, 1, 9), 92, 95, 91, 94),
+            DailyBar(date(2024, 1, 3), 92, 95, 91, 94),
+            DailyBar(date(2024, 1, 9), 94, 96, 93, 95),
             DailyBar(date(2024, 2, 1), 96, 98, 95, 97),
         ]
 
@@ -18,17 +19,21 @@ class DropResearchTests(TestCase):
 
         self.assertIsNotNone(result)
         assert result is not None
-        self.assertEqual(result.signal_day, "2024-01-01")
+        self.assertEqual(result.signal_day, "2024-01-02")
         self.assertAlmostEqual(result.drop_pct, -10.0)
-        self.assertEqual(result.signal_close, 100)
-        self.assertEqual(result.one_week_close, 94)
+        self.assertEqual(result.prior_close, 100)
+        self.assertEqual(result.signal_close, 90)
+        self.assertEqual(result.entry_day, "2024-01-03")
+        self.assertEqual(result.entry_open, 92)
+        self.assertEqual(result.one_week_close, 95)
         self.assertEqual(result.thirty_day_close, 97)
-        self.assertAlmostEqual(result.thirty_day_pct_change, -3.0)
+        self.assertAlmostEqual(result.thirty_day_pct_change, 7.777777777777778)
 
     def test_leaves_unavailable_checkpoints_blank(self) -> None:
         bars = [
             DailyBar(date(2024, 1, 1), 100, 101, 99, 100),
             DailyBar(date(2024, 1, 2), 100, 100, 90, 90),
+            DailyBar(date(2024, 1, 3), 92, 95, 91, 94),
         ]
 
         result = latest_large_drop(WatchlistItem("TEST", "Test Co."), bars, 5.0)

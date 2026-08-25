@@ -38,6 +38,15 @@ class BacktestStrategyTests(TestCase):
 
         self.assertEqual(result.trades, [])
 
+    def test_enters_at_the_third_day_open_after_a_confirmed_close_to_close_drop(self) -> None:
+        strategy = Strategy(name="Hold", description="", hold_days=1)
+
+        result = run_strategy(self.make_bars(), 5.0, strategy)
+
+        self.assertEqual(len(result.trades), 1)
+        self.assertEqual(result.trades[0].entry_day, "2024-01-03")
+        self.assertEqual(result.trades[0].entry_price, 88.0)
+
     def test_trailing_stop_exits_after_a_high_water_mark_decline(self) -> None:
         bars = [
             DailyBar(date(2024, 1, 1), 100.0, 101.0, 99.0, 100.0),

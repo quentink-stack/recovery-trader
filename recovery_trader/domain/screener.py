@@ -22,7 +22,10 @@ class DropResearch:
     company: str
     signal_day: str
     drop_pct: float
+    prior_close: float
     signal_close: float
+    entry_day: str
+    entry_open: float
     one_week_close: float | None
     thirty_day_close: float | None
     thirty_day_pct_change: float | None
@@ -37,12 +40,24 @@ def load_watchlist(path: Path) -> list[WatchlistItem]:
 
 
 def latest_large_drop(item: WatchlistItem, bars: list[DailyBar], minimum_drop_pct: float) -> DropResearch | None:
-    for index in range(len(bars) - 2, -1, -1):
-        signal, next_day = bars[index], bars[index + 1]
-        drop_pct = (next_day.close / signal.close - 1) * 100
+    for index in range(len(bars) - 3, -1, -1):
+        prior_day, signal_day, entry_day = bars[index], bars[index + 1], bars[index + 2]
+        drop_pct = (signal_day.close / prior_day.close - 1) * 100
         if drop_pct <= -minimum_drop_pct:
-            thirty_day_close = close_on_or_after(bars[index + 1:], signal.day + timedelta(days=30))
-            return DropResearch(item.ticker, item.company, signal.day.isoformat(), drop_pct, signal.close, close_on_or_after(bars[index + 1:], signal.day + timedelta(days=7)), thirty_day_close, percent_change(signal.close, thirty_day_close) if thirty_day_close is not None else None)
+            thirty_day_close = close_on_or_after(bars[index + 2:], signal_day.day + timedelta(days=30))
+            return DropResearch(
+                item.ticker,
+                item.company,
+                signal_day.day.isoformat(),
+                drop_pct,
+                prior_day.close,
+                signal_day.close,
+                entry_day.day.isoformat(),
+                entry_day.open,
+                close_on_or_after(bars[index + 2:], signal_day.day + timedelta(days=7)),
+                thirty_day_close,
+                percent_change(signal_day.close, thirty_day_close) if thirty_day_close is not None else None,
+            )
     return None
 
 

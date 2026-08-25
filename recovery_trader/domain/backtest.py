@@ -43,8 +43,8 @@ class Strategy:
 
 
 STRATEGIES = (
-    Strategy("Hold 15 days", "Enter next open after a dip; exit after 15 sessions.", 15),
-    Strategy("Bracket 10/12", "Enter next open; 10% stop, 12% target, or 15-session exit.", 15, 10, 12),
+    Strategy("Hold 15 days", "Detect a close-to-close drop on day 2; enter day 3 open and exit after 15 sessions.", 15),
+    Strategy("Bracket 10/12", "Detect a close-to-close drop on day 2; enter day 3 open with a 10% stop, 12% target, or 15-session exit.", 15, 10, 12),
     Strategy("Bounce confirmed 10/12", "Require a 2% rebound after entry before trading; then use a 10% stop / 12% target or 15-session exit.", 15, 10, 12, 2.0),
     Strategy("Fast bounce 8/10", "Require a 1.5% rebound after entry and exit on an 8-session hold, 8% stop, or 10% target.", 8, 8, 10, 1.5),
     Strategy("Breakout confirmation 10/12", "Wait for the first recovery day to close above the dip day before entering; then use a 10% stop / 12% target or 15-session exit.", 15, 10, 12, None, True),
