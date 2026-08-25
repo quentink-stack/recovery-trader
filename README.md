@@ -14,19 +14,31 @@ The app opens in your browser. It is a local, read-only research dashboard and c
 
 ## Local Ollama connectivity
 
-The research client connects to Ollama at `http://localhost:11434` by default and uses the `qwen3:8b-q4_K_M` model. Install and start Ollama, then pull a model before using the future ticker research workflow:
+The research client connects to Ollama at `http://localhost:11434` by default and uses the `qwen3:8b-q4_K_M` model. Install Ollama, then start the local server in one PowerShell window:
 
 ```powershell
 ollama serve
-ollama pull qwen3:8b-q4_K_M
 ```
+
+Leave that command running. In a second PowerShell window, download the model once and start the web app:
+
+```powershell
+ollama pull qwen3:8b-q4_K_M
+cd 'C:\Users\Quentin\Documents\Personal Projects\git\recovery-trader'
+python -m streamlit run streamlit_app.py
+```
+
+Ollama loads the model automatically on the first ticker-research request. To load it before using the app, run `ollama run qwen3:8b-q4_K_M "Reply READY"` in the second window. If `ollama serve` reports that the address is already in use, Ollama is already running and you can continue with the second window.
 
 Override the defaults with environment variables when needed:
 
 ```powershell
 $env:OLLAMA_BASE_URL = 'http://localhost:11434'
 $env:OLLAMA_MODEL = 'qwen3:8b-q4_K_M'
+$env:OLLAMA_TIMEOUT = 300
 ```
+
+The default request timeout is now 300 seconds (five minutes). Set `OLLAMA_TIMEOUT` to a different number of seconds before starting Streamlit if your hardware needs more or less time. Restart Streamlit after changing any Ollama environment variable.
 
 The reusable client is in `ollama_client.py`. It provides `is_available()` for a health check and `generate()` for non-streaming model responses. JSON mode is enabled by default for the structured research report planned below.
 
@@ -66,4 +78,3 @@ The Streamlit app reads Alpaca Basic market data only; it has no order, account,
 - **Run dip-recovery backtest** downloads two years of daily bars for a ticker and tests a simple proxy: a qualifying drop from one session's close to the next session's close, entry at the following open, a 15-trading-day maximum hold, 10% stop, and 12% target.
 
 The backtest measures underlying-price returns and avoids using the signal day's closing price as an entry. Alpaca Basic's IEX data is suitable for development and hypothesis testing—not execution-quality pricing.
-
