@@ -47,19 +47,24 @@ class ResearchReportTests(TestCase):
     def test_generation_uses_prompt_and_parses_response(self) -> None:
         client = Mock()
         client.generate.return_value = json.dumps(self.report_payload())
+        stages: list[str] = []
 
-        report = generate_report(self.context, client)
+        report = generate_report(self.context, client, on_stage=stages.append)
 
         self.assertEqual(report.score, 50)
         client.generate.assert_called_once()
         self.assertTrue(client.generate.call_args.kwargs["json_response"])
+        self.assertEqual(stages, ["Generating report with local Qwen3", "Validating the structured report"])
 
-    def test_invalid_category_is_rejected(self) -> None:
+    def test_missing_category_is_recorded_as_an_explicit_uncertainty(self) -> None:
         payload = self.report_payload()
         payload["score_categories"].pop("macro")
 
-        with self.assertRaises(ValueError):
-            parse_report(json.dumps(payload), "TEST")
+        report = parse_report(json.dumps(payload), "TEST")
+
+        self.assertEqual(report.assessments["macro"].rating, "neutral")
+        self.assertEqual(report.assessments["macro"].evidence, "The local model did not provide an assessment for this category.")
+        self.assertIn("The local model did not assess: Macro.", report.uncertainties)
 
     def test_extra_model_metadata_and_category_casing_are_tolerated(self) -> None:
         payload = self.report_payload()

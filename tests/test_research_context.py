@@ -47,3 +47,28 @@ class ResearchContextTests(TestCase):
         self.assertEqual(context.ticker, "TEST")
         self.assertEqual(market_data.request[0], "TEST")
         self.assertEqual(news_client.request, ("TEST", 4))
+
+    def test_service_reports_evidence_collection_stages(self) -> None:
+        class FakeMarketData:
+            def daily_bars(self, ticker: str, start: date, end: date) -> list[DailyBar]:
+                return [DailyBar(date(2026, 8, 24), 100, 101, 99, 100)]
+
+        class FakeNewsClient:
+            def recent_articles(self, ticker: str, limit: int) -> list[NewsArticle]:
+                return []
+
+        stages: list[str] = []
+        ResearchService(FakeMarketData(), FakeNewsClient()).collect(  # type: ignore[arg-type]
+            "TEST",
+            as_of=date(2026, 8, 24),
+            on_stage=stages.append,
+        )
+
+        self.assertEqual(
+            stages,
+            [
+                "Fetching adjusted price history from Alpaca",
+                "Fetching recent news",
+                "Preparing evidence",
+            ],
+        )

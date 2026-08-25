@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 from pathlib import Path
+from time import perf_counter
+from typing import Any
 from urllib.error import HTTPError, URLError
 
 import pandas as pd
@@ -19,6 +21,87 @@ from recovery_trader.research.service import ResearchService
 ROOT = Path(__file__).parents[2]
 SP500 = ROOT / "data" / "sp500.csv"
 SCREEN_DATA_VERSION = "day-two-signal-v1"
+
+
+def format_elapsed(seconds: float) -> str:
+    """Format a stage duration for the research status panel."""
+    if seconds < 1:
+        return "under 1 second"
+    if seconds < 60:
+        return f"{seconds:.1f} seconds"
+    minutes, remainder = divmod(round(seconds), 60)
+    return f"{minutes}m {remainder:02d}s"
+
+
+class ResearchProgress:
+    """Render and persist the live stages of one ticker-research run."""
+
+    def __init__(self, slot: Any, ticker: str, *, ollama_timeout: int) -> None:
+        self.ticker = ticker
+        self.ollama_timeout = ollama_timeout
+        self.events: list[dict[str, str | float]] = []
+        self.active_stage: str | None = None
+        self.active_started_at: float | None = None
+        self.status = slot.status(f"Starting research for {ticker}…", state="running", expanded=True)
+
+    def begin(self, stage: str) -> None:
+        self._complete_active_stage()
+        self.active_stage = stage
+        self.active_started_at = perf_counter()
+        timeout_note = f" (configured timeout: {format_elapsed(self.ollama_timeout)})" if stage == "Generating report with local Qwen3" else ""
+        self.status.update(label=f"{stage}…{timeout_note}", state="running", expanded=True)
+
+    def complete(self) -> None:
+        self._complete_active_stage()
+        label = f"Research complete for {self.ticker}"
+        self.status.update(label=label, state="complete", expanded=False)
+        self._save(state="complete", label=label)
+
+    def fail(self, message: str) -> None:
+        stage = self.active_stage or "Research"
+        label = f"Research stopped during {stage.lower()}"
+        self.status.error(message)
+        self.status.update(label=label, state="error", expanded=True)
+        self._save(state="error", label=label, error=message, failed_stage=stage)
+
+    def _complete_active_stage(self) -> None:
+        if self.active_stage is None or self.active_started_at is None:
+            return
+        elapsed = perf_counter() - self.active_started_at
+        self.events.append({"stage": self.active_stage, "elapsed": elapsed})
+        self.status.write(f"✓ {self.active_stage} ({format_elapsed(elapsed)})")
+        self.active_stage = None
+        self.active_started_at = None
+
+    def _save(self, *, state: str, label: str, error: str | None = None, failed_stage: str | None = None) -> None:
+        st.session_state["ticker_research_status"] = {
+            "ticker": self.ticker,
+            "state": state,
+            "label": label,
+            "events": self.events,
+            "error": error,
+            "failed_stage": failed_stage,
+        }
+
+
+def render_saved_research_status(slot: Any) -> None:
+    """Restore the final state of the most recent research run after a rerun."""
+    saved = st.session_state.get("ticker_research_status")
+    if not isinstance(saved, dict):
+        return
+    state = saved.get("state")
+    label = saved.get("label")
+    if state not in {"complete", "error"} or not isinstance(label, str):
+        return
+    status = slot.status(label, state=state, expanded=state == "error")
+    for event in saved.get("events", []):
+        if isinstance(event, dict) and isinstance(event.get("stage"), str) and isinstance(event.get("elapsed"), (int, float)):
+            status.write(f"✓ {event['stage']} ({format_elapsed(float(event['elapsed']))})")
+    error = saved.get("error")
+    failed_stage = saved.get("failed_stage")
+    if isinstance(error, str):
+        prefix = f"{failed_stage}: " if isinstance(failed_stage, str) else ""
+        status.error(f"{prefix}{error}")
 
 st.set_page_config(page_title="Recovery Trader", page_icon="📉", layout="wide")
 
@@ -150,18 +233,50 @@ def ticker_research_section() -> None:
     st.header("Ticker research")
     st.caption("Combines recent market data and news, then asks the local Qwen3 model for a structured, evidence-grounded assessment.")
     ticker = st.text_input("Ticker to research", placeholder="e.g. AAPL").strip().upper()
-    if st.button("Research ticker", type="primary"):
+    research_requested = st.button("Research ticker", type="primary")
+    saved_status = st.session_state.get("ticker_research_status")
+    saved_context = st.session_state.get("ticker_research_context")
+    retry_available = (
+        isinstance(saved_status, dict)
+        and saved_status.get("state") == "error"
+        and saved_context is not None
+        and not isinstance(st.session_state.get("ticker_research_report"), ResearchReport)
+    )
+    retry_requested = st.button("Retry report generation", icon=":material/refresh:") if retry_available else False
+    status_slot = st.container()
+
+    if research_requested:
         if not ticker:
             st.warning("Enter a ticker symbol first.")
         else:
+            st.session_state.pop("ticker_research_context", None)
+            st.session_state.pop("ticker_research_report", None)
+            st.session_state.pop("ticker_research_status", None)
+            model_client = ollama_client()
+            progress = ResearchProgress(status_slot, ticker, ollama_timeout=model_client.config.timeout)
             try:
-                with st.spinner(f"Collecting evidence and analyzing {ticker}…"):
-                    context = research_service().collect(ticker)
-                    report = generate_report(context, ollama_client())
+                progress.begin("Validating ticker")
+                context = research_service().collect(ticker, on_stage=progress.begin)
                 st.session_state["ticker_research_context"] = context
+                report = generate_report(context, model_client, on_stage=progress.begin)
                 st.session_state["ticker_research_report"] = report
+                progress.complete()
             except Exception as exc:
-                st.error(user_error(exc))
+                progress.fail(user_error(exc))
+                if st.session_state.get("ticker_research_context") is not None:
+                    st.rerun()
+    elif retry_requested:
+        context = saved_context
+        model_client = ollama_client()
+        progress = ResearchProgress(status_slot, context.ticker, ollama_timeout=model_client.config.timeout)
+        try:
+            report = generate_report(context, model_client, on_stage=progress.begin)
+            st.session_state["ticker_research_report"] = report
+            progress.complete()
+        except Exception as exc:
+            progress.fail(user_error(exc))
+    else:
+        render_saved_research_status(status_slot)
 
     report = st.session_state.get("ticker_research_report")
     if isinstance(report, ResearchReport):
