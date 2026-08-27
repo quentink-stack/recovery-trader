@@ -14,10 +14,16 @@ class OllamaConfig:
     base_url: str = "http://localhost:11434"
     model: str = "qwen3:8b-q4_K_M"
     timeout: int = 300
+    temperature: float = 0.15
 
     @classmethod
     def from_environment(cls) -> "OllamaConfig":
-        return cls(os.getenv("OLLAMA_BASE_URL", cls.base_url).rstrip("/"), os.getenv("OLLAMA_MODEL", cls.model), int(os.getenv("OLLAMA_TIMEOUT", str(cls.timeout))))
+        return cls(
+            os.getenv("OLLAMA_BASE_URL", cls.base_url).rstrip("/"),
+            os.getenv("OLLAMA_MODEL", cls.model),
+            int(os.getenv("OLLAMA_TIMEOUT", str(cls.timeout))),
+            float(os.getenv("OLLAMA_TEMPERATURE", str(cls.temperature))),
+        )
 
 
 class OllamaError(RuntimeError):
@@ -44,7 +50,12 @@ class OllamaClient:
         return True
 
     def generate(self, prompt: str, *, json_response: bool = True) -> str:
-        payload: dict[str, str | bool] = {"model": self.config.model, "prompt": prompt, "stream": False}
+        payload: dict[str, object] = {
+            "model": self.config.model,
+            "prompt": prompt,
+            "stream": False,
+            "options": {"temperature": self.config.temperature},
+        }
         if json_response:
             payload["format"] = "json"
         response = self._get_json("/api/generate", payload)

@@ -22,6 +22,7 @@ class FakeResponse:
 class OllamaClientTests(TestCase):
     def test_default_timeout_allows_five_minutes_for_local_generation(self) -> None:
         self.assertEqual(OllamaConfig().timeout, 300)
+        self.assertEqual(OllamaConfig().temperature, 0.15)
 
     def test_generate_uses_configured_model_and_json_format(self) -> None:
         client = OllamaClient(OllamaConfig("http://ollama.test", "test-model", 10))
@@ -32,7 +33,16 @@ class OllamaClientTests(TestCase):
         self.assertEqual(response, "{\"score\": 72}")
         request = mocked.call_args.args[0]
         self.assertEqual(request.full_url, "http://ollama.test/api/generate")
-        self.assertEqual(json.loads(request.data), {"model": "test-model", "prompt": "Research TEST", "stream": False, "format": "json"})
+        self.assertEqual(
+            json.loads(request.data),
+            {
+                "model": "test-model",
+                "prompt": "Research TEST",
+                "stream": False,
+                "options": {"temperature": 0.15},
+                "format": "json",
+            },
+        )
 
     def test_invalid_generate_response_raises(self) -> None:
         client = OllamaClient(OllamaConfig())

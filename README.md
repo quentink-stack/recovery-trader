@@ -36,9 +36,10 @@ Override the defaults with environment variables when needed:
 $env:OLLAMA_BASE_URL = 'http://localhost:11434'
 $env:OLLAMA_MODEL = 'qwen3:8b-q4_K_M'
 $env:OLLAMA_TIMEOUT = 300
+$env:OLLAMA_TEMPERATURE = 0.15
 ```
 
-The default request timeout is now 300 seconds (five minutes). Set `OLLAMA_TIMEOUT` to a different number of seconds before starting Streamlit if your hardware needs more or less time. Restart Streamlit after changing any Ollama environment variable.
+The default request timeout is 300 seconds (five minutes) and the default temperature is `0.15`, which favors repeatable, evidence-grounded structured reports while preserving Qwen's reasoning mode. Set `OLLAMA_TIMEOUT` or `OLLAMA_TEMPERATURE` before starting Streamlit to override either value. Restart Streamlit after changing any Ollama environment variable.
 
 The reusable client is in `ollama_client.py`. It provides `is_available()` for a health check and `generate()` for non-streaming model responses. JSON mode is enabled by default for the structured research report planned below.
 
