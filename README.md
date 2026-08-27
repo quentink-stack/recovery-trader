@@ -2,9 +2,19 @@
 
 A local research screener and strategy lab for sharp single-day equity declines.
 
+
+## Local Ollama
+
+Ticker research uses Ollama at `http://localhost:11434` with the `qwen3:8b-q4_K_M` model by default. Install Ollama, then run these commands in separate PowerShell windows:
+
+```powershell
+ollama serve
+```
+
 ## Run the web app
 
 ```powershell
+ollama pull qwen3:8b-q4_K_M
 cd 'C:\Users\Quentin\Documents\Personal Projects\git\recovery-trader'
 python -m pip install -r requirements.txt
 python -m streamlit run streamlit_app.py
@@ -12,23 +22,13 @@ python -m streamlit run streamlit_app.py
 
 The app opens in your browser. It is a local, read-only research dashboard and contains no order endpoints.
 
-## Local Ollama connectivity
-
-The research client connects to Ollama at `http://localhost:11434` by default and uses the `qwen3:8b-q4_K_M` model. Install Ollama, then start the local server in one PowerShell window:
+Leave `ollama serve` running. Ollama loads the model automatically on the first ticker-research request. To load it before using the app, run:
 
 ```powershell
-ollama serve
+ollama run qwen3:8b-q4_K_M "Reply READY"
 ```
 
-Leave that command running. In a second PowerShell window, download the model once and start the web app:
-
-```powershell
-ollama pull qwen3:8b-q4_K_M
-cd 'C:\Users\Quentin\Documents\Personal Projects\git\recovery-trader'
-python -m streamlit run streamlit_app.py
-```
-
-Ollama loads the model automatically on the first ticker-research request. To load it before using the app, run `ollama run qwen3:8b-q4_K_M "Reply READY"` in the second window. If `ollama serve` reports that the address is already in use, Ollama is already running and you can continue with the second window.
+If `ollama serve` reports that the address is already in use, Ollama is already running and you can continue with the second window.
 
 Override the defaults with environment variables when needed:
 
