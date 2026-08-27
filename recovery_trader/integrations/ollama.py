@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
+from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -49,7 +50,16 @@ class OllamaClient:
             return False
         return True
 
-    def generate(self, prompt: str, *, json_response: bool = True) -> str:
+    def generate(
+        self,
+        prompt: str,
+        *,
+        json_response: bool = True,
+        response_schema: dict[str, Any] | None = None,
+    ) -> str:
+        """Generate text, optionally constrained by an Ollama JSON Schema."""
+        if response_schema is not None and not json_response:
+            raise ValueError("A response schema requires JSON response mode.")
         payload: dict[str, object] = {
             "model": self.config.model,
             "prompt": prompt,
@@ -57,7 +67,7 @@ class OllamaClient:
             "options": {"temperature": self.config.temperature},
         }
         if json_response:
-            payload["format"] = "json"
+            payload["format"] = response_schema or "json"
         response = self._get_json("/api/generate", payload)
         if not isinstance(response, dict) or not isinstance(response.get("response"), str):
             raise OllamaError("Ollama returned an invalid generate response.")

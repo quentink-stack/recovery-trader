@@ -26,6 +26,54 @@ RATING_ALIASES = {
     "uncertain": "neutral",
     "unknown": "neutral",
 }
+CATEGORY_NAME_ALIASES = {
+    "market conditions": "market",
+    "market outlook": "market",
+    "price action": "market",
+    "technical": "market",
+    "technical analysis": "market",
+    "fundamentals": "earnings",
+    "financial performance": "earnings",
+    "company financials": "earnings",
+    "earnings outlook": "earnings",
+    "news and events": "news",
+    "headlines": "news",
+    "macroeconomic": "macro",
+    "macroeconomics": "macro",
+    "economic conditions": "macro",
+    "regulatory": "regulation",
+    "legal": "regulation",
+    "policy": "regulation",
+    "investor sentiment": "sentiment",
+    "market sentiment": "sentiment",
+}
+MISSING_CATEGORY_EVIDENCE = "The local model did not provide an assessment for this category."
+ASSESSMENT_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "rating": {"type": "string", "enum": list(RATING_VALUES)},
+        "evidence": {"type": "string"},
+    },
+    "required": ["rating", "evidence"],
+    "additionalProperties": False,
+}
+REPORT_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "summary": {"type": "string"},
+        "score_categories": {
+            "type": "object",
+            "properties": {category: ASSESSMENT_RESPONSE_SCHEMA for category in CATEGORIES},
+            "required": list(CATEGORIES),
+            "additionalProperties": False,
+        },
+        "catalysts": {"type": "array", "items": {"type": "string"}},
+        "risks": {"type": "array", "items": {"type": "string"}},
+        "uncertainties": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["summary", "score_categories", "catalysts", "risks", "uncertainties"],
+    "additionalProperties": False,
+}
 
 
 @dataclass(frozen=True)
@@ -57,7 +105,7 @@ def build_prompt(context: ResearchContext) -> str:
     evidence = json.dumps(context.to_payload(), indent=2)
     return f"""You are a cautious equity research assistant. Analyze {context.ticker} using only the evidence below.
 Do not invent facts, events, prices, sources, or earnings information. If evidence is missing, say so in uncertainties.
-Include every required score category even when the evidence is unavailable; use a neutral rating and say that no relevant evidence was provided.
+The `score_categories` value is required. It must be one JSON object (not a list and not a wrapper) with exactly these six keys: market, earnings, news, macro, regulation, and sentiment. Include every required category even when evidence is unavailable; use a neutral rating and say that no relevant evidence was provided.
 Return JSON only, with exactly this shape:
 {{
   \"summary\": \"brief balanced assessment\",
@@ -121,6 +169,101 @@ def evidence_coverage_score(category_coverage: dict[str, int]) -> int:
     return round(weighted_total / total_weight)
 
 
+def _canonical_category_name(value: Any) -> str | None:
+    """Map common model labels to the application's fixed score categories."""
+    if not isinstance(value, str):
+        return None
+    normalized = " ".join(value.strip().lower().replace("_", " ").replace("-", " ").split())
+    if normalized in CATEGORIES:
+        return normalized
+    alias = CATEGORY_NAME_ALIASES.get(normalized)
+    if alias is not None:
+        return alias
+
+    # Qwen often adds a descriptive suffix to a requested category, such as
+    # "Market analysis" or "Regulatory considerations". Classify those labels
+    # without requiring a brittle list of every possible heading.
+    if "sentiment" in normalized:
+        return "sentiment"
+    if any(term in normalized for term in ("regulat", "legal", "policy", "compliance")):
+        return "regulation"
+    if any(term in normalized for term in ("macro", "economic", "economy")):
+        return "macro"
+    if any(term in normalized for term in ("earnings", "financial", "fundamental")):
+        return "earnings"
+    if any(term in normalized for term in ("news", "headline", "event")):
+        return "news"
+    if any(term in normalized for term in ("market", "technical", "price action")):
+        return "market"
+    return None
+
+
+def _extract_category_mapping(value: Any) -> dict[str, Any]:
+    """Recover category assessments from dictionary or list-shaped model JSON."""
+    if isinstance(value, list):
+        categories: dict[str, Any] = {}
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            category = _canonical_category_name(
+                item.get(
+                    "category",
+                    item.get(
+                        "name",
+                        item.get(
+                            "label",
+                            item.get("title", item.get("section", item.get("topic", item.get("area")))),
+                        ),
+                    ),
+                )
+            )
+            if category is not None:
+                categories[category] = item.get("assessment", item)
+            else:
+                categories.update(_extract_category_mapping(item))
+        return categories
+
+    if not isinstance(value, dict):
+        return {}
+
+    direct_categories = {
+        category: item
+        for label, item in value.items()
+        if (category := _canonical_category_name(label)) is not None
+    }
+    if direct_categories:
+        return direct_categories
+
+    container_names = (
+        "score_categories",
+        "category_scores",
+        "categories",
+        "assessments",
+        "ratings",
+        "scores",
+        "evaluation",
+        "report",
+        "analysis",
+        "result",
+        "data",
+    )
+    for container in container_names:
+        nested_categories = _extract_category_mapping(value.get(container))
+        if nested_categories:
+            return nested_categories
+
+    # Local models occasionally add an arbitrary envelope such as
+    # `research_output` or `response`. Search nested JSON values as a final
+    # recovery path instead of depending on a fixed wrapper name.
+    for label, nested_value in value.items():
+        if label in container_names:
+            continue
+        nested_categories = _extract_category_mapping(nested_value)
+        if nested_categories:
+            return nested_categories
+    return {}
+
+
 def parse_report(
     raw_response: str,
     ticker: str,
@@ -135,25 +278,25 @@ def parse_report(
     if not isinstance(payload, dict):
         raise ValueError("Ollama report must be a JSON object.")
 
-    raw_categories = payload.get("score_categories")
-    if not isinstance(raw_categories, dict):
-        # Smaller local models sometimes emit the category objects at the JSON
-        # root instead of nesting them below score_categories. Treat that as a
-        # recoverable schema variation rather than discarding the full report.
-        raw_categories = {category: payload[category] for category in CATEGORIES if category in payload}
-    normalized_categories = {str(category).strip().lower(): value for category, value in raw_categories.items()}
+    normalized_categories = _extract_category_mapping(payload)
+    if not normalized_categories:
+        field_names = ", ".join(str(key) for key in payload.keys()) or "none"
+        raise ValueError(
+            "Ollama report did not include any recognizable category assessments. "
+            f"Top-level fields returned: {field_names}. Retry report generation so the model can return the required structured analysis."
+        )
     missing_categories = set(CATEGORIES) - set(normalized_categories)
     assessments: dict[str, CategoryAssessment] = {}
     for category in CATEGORIES:
         if category in missing_categories:
-            assessments[category] = CategoryAssessment("neutral", "The local model did not provide an assessment for this category.")
+            assessments[category] = CategoryAssessment("neutral", MISSING_CATEGORY_EVIDENCE)
             continue
         item = normalized_categories[category]
         if not isinstance(item, dict):
             raise ValueError(f"Invalid Ollama assessment for {category}.")
-        rating = str(item.get("rating", "")).strip().lower()
+        rating = str(item.get("rating", item.get("score", ""))).strip().lower()
         rating = RATING_ALIASES.get(rating, rating)
-        evidence = item.get("evidence")
+        evidence = item.get("evidence", item.get("rationale", item.get("reasoning", "")))
         if isinstance(evidence, list):
             evidence = "; ".join(str(value).strip() for value in evidence if str(value).strip())
         elif not isinstance(evidence, str):
@@ -219,7 +362,11 @@ def generate_report(
     """Generate and validate a report for an already-collected research context."""
     if on_stage is not None:
         on_stage("Generating report with local Qwen3")
-    raw_response = client.generate(build_prompt(context), json_response=True)
+    raw_response = client.generate(
+        build_prompt(context),
+        json_response=True,
+        response_schema=REPORT_RESPONSE_SCHEMA,
+    )
     if on_stage is not None:
         on_stage("Validating the structured report")
     return parse_report(raw_response, context.ticker, category_coverage=category_evidence_coverage(context))

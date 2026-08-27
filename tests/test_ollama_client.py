@@ -44,6 +44,16 @@ class OllamaClientTests(TestCase):
             },
         )
 
+    def test_generate_uses_a_supplied_json_schema(self) -> None:
+        client = OllamaClient(OllamaConfig("http://ollama.test", "test-model", 10))
+        schema = {"type": "object", "properties": {"summary": {"type": "string"}}}
+
+        with patch("recovery_trader.integrations.ollama.urlopen", return_value=FakeResponse({"response": '{"summary": "ok"}'})) as mocked:
+            client.generate("Research TEST", response_schema=schema)
+
+        request = mocked.call_args.args[0]
+        self.assertEqual(json.loads(request.data)["format"], schema)
+
     def test_invalid_generate_response_raises(self) -> None:
         client = OllamaClient(OllamaConfig())
 

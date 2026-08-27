@@ -6,7 +6,7 @@ from unittest.mock import Mock
 from recovery_trader.domain.market import DailyBar
 from recovery_trader.integrations.news import NewsArticle
 from recovery_trader.research.context import build_research_context
-from recovery_trader.research.report import build_prompt, category_evidence_coverage, evidence_coverage_score, generate_report, parse_report
+from recovery_trader.research.report import REPORT_RESPONSE_SCHEMA, build_prompt, category_evidence_coverage, evidence_coverage_score, generate_report, parse_report
 
 
 class ResearchReportTests(TestCase):
@@ -67,6 +67,7 @@ class ResearchReportTests(TestCase):
         self.assertEqual(report.evidence_coverage, 8)
         client.generate.assert_called_once()
         self.assertTrue(client.generate.call_args.kwargs["json_response"])
+        self.assertEqual(client.generate.call_args.kwargs["response_schema"], REPORT_RESPONSE_SCHEMA)
         self.assertEqual(stages, ["Generating report with local Qwen3", "Validating the structured report"])
 
     def test_evidence_coverage_uses_market_depth_and_news_source_breadth(self) -> None:
@@ -125,22 +126,68 @@ class ResearchReportTests(TestCase):
         self.assertIn("The local model did not provide a valid catalysts list.", report.uncertainties)
         self.assertIn("The local model did not provide a valid uncertainties list.", report.uncertainties)
 
-    def test_top_level_or_omitted_category_container_is_recovered(self) -> None:
+    def test_top_level_or_list_category_container_is_recovered(self) -> None:
         top_level_payload = self.report_payload()
         top_level_payload.update(top_level_payload.pop("score_categories"))
 
         top_level_report = parse_report(json.dumps(top_level_payload), "TEST")
         self.assertEqual(top_level_report.score, 50)
 
+        list_payload = self.report_payload()
+        list_payload["score_categories"] = [
+            {"category": category, **assessment}
+            for category, assessment in self.report_payload()["score_categories"].items()
+        ]
+        list_report = parse_report(json.dumps(list_payload), "TEST")
+
+        self.assertEqual(list_report.score, 50)
+        self.assertEqual(list_report.assessments["market"].evidence, "Evidence for market.")
+
+    def test_descriptive_qwen_category_headings_are_recovered(self) -> None:
+        payload = self.report_payload()
+        payload["analysis"] = {
+            "categories": [
+                {"name": "Market analysis", "rating": "positive", "rationale": "Price trend is improving."},
+                {"name": "Financial performance", "rating": "neutral", "rationale": "No earnings data supplied."},
+                {"name": "News and events", "rating": "neutral", "rationale": "Headlines are mixed."},
+                {"name": "Macroeconomic conditions", "rating": "neutral", "rationale": "No macro data supplied."},
+                {"name": "Regulatory considerations", "rating": "neutral", "rationale": "No regulatory data supplied."},
+                {"name": "Investor sentiment analysis", "rating": "negative", "rationale": "News tone is cautious."},
+            ]
+        }
+        payload.pop("score_categories")
+
+        report = parse_report(json.dumps(payload), "TEST")
+
+        self.assertEqual(report.assessments["market"].rating, "positive")
+        self.assertEqual(report.assessments["earnings"].evidence, "No earnings data supplied.")
+        self.assertEqual(report.assessments["sentiment"].rating, "negative")
+
+    def test_categories_inside_an_unknown_wrapper_are_recovered(self) -> None:
+        payload = self.report_payload()
+        payload["research_output"] = {
+            "sections": [
+                {"topic": "Market analysis", "rating": "positive", "evidence": "Momentum improved."},
+                {"topic": "Earnings analysis", "rating": "neutral", "evidence": "No earnings data."},
+                {"topic": "News analysis", "rating": "neutral", "evidence": "Headlines were mixed."},
+                {"topic": "Macro analysis", "rating": "neutral", "evidence": "No macro data."},
+                {"topic": "Regulatory analysis", "rating": "neutral", "evidence": "No regulatory data."},
+                {"topic": "Sentiment analysis", "rating": "negative", "evidence": "Tone was cautious."},
+            ]
+        }
+        payload.pop("score_categories")
+
+        report = parse_report(json.dumps(payload), "TEST")
+
+        self.assertEqual(report.recovery_score, 60)
+        self.assertEqual(report.assessments["regulation"].evidence, "No regulatory data.")
+
+    def test_report_without_recognizable_categories_is_rejected(self) -> None:
         no_categories_payload = self.report_payload()
         no_categories_payload.pop("score_categories")
-        no_categories_report = parse_report(json.dumps(no_categories_payload), "TEST")
 
-        self.assertTrue(all(item.rating == "neutral" for item in no_categories_report.assessments.values()))
-        self.assertIn(
-            "The local model did not assess: Market, Earnings, News, Macro, Regulation, Sentiment.",
-            no_categories_report.uncertainties,
-        )
+        with self.assertRaisesRegex(ValueError, "did not include any recognizable category assessments"):
+            parse_report(json.dumps(no_categories_payload), "TEST")
 
     def test_extra_model_metadata_and_category_casing_are_tolerated(self) -> None:
         payload = self.report_payload()
