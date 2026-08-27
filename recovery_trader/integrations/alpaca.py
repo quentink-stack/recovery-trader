@@ -23,13 +23,13 @@ class AlpacaMarketData:
     @classmethod
     def from_config(cls) -> "AlpacaMarketData":
         config = ConfigParser()
-        config.read(Path(__file__).parents[2] / "alpaca.ini", encoding="utf-8")
+        config.read(Path(__file__).parents[2] / "config" / "alpaca.ini", encoding="utf-8")
         if not config.has_section("alpaca"):
-            raise ValueError("Create alpaca.ini from the provided template.")
+            raise ValueError("Create config/alpaca.ini from the provided template.")
         section = config["alpaca"]
         key, secret = section.get("api_key", ""), section.get("api_secret", "")
         if not key or not secret or key.startswith("PASTE_") or secret.startswith("PASTE_"):
-            raise ValueError("Paste Alpaca paper API key and secret into alpaca.ini.")
+            raise ValueError("Paste Alpaca paper API key and secret into config/alpaca.ini.")
         return cls(key, secret, section.get("equities_feed", "iex"))
 
     def _get_json(self, path: str, params: dict[str, str | int]) -> dict:

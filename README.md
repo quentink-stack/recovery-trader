@@ -65,7 +65,7 @@ The refresh script reads the constituent table from Wikipedia and writes the res
 
 ## Alpaca Basic research mode
 
-Create a free Alpaca paper account and paste its API key and secret into `alpaca.ini`. This file is ignored by Git.
+Create a free Alpaca paper account and paste its API key and secret into `config/alpaca.ini`. This file is ignored by Git.
 
 ```ini
 [alpaca]
@@ -73,6 +73,18 @@ api_key = paste your Alpaca paper key here
 api_secret = paste your Alpaca paper secret here
 equities_feed = iex
 ```
+
+## SEC EDGAR setup
+
+The SEC integration uses public filing data and requires a descriptive User-Agent containing a real contact email. Create `config/sec_edgar.ini` from `config/sec_edgar.example.ini`; it is ignored by Git.
+
+```ini
+[sec_edgar]
+user_agent = Recovery Trader your-email@example.com
+timeout_seconds = 30
+```
+
+Alternatively, set `SEC_USER_AGENT` before starting Python. `SEC_TIMEOUT` can override the 30-second request timeout.
 
 The Streamlit app reads Alpaca Basic market data only; it has no order, account, or position endpoints.
 
