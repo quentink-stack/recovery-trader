@@ -38,11 +38,18 @@ class CategoryAssessment:
 class ResearchReport:
     ticker: str
     summary: str
-    score: int
+    recovery_score: int
+    evidence_coverage: int
     assessments: dict[str, CategoryAssessment]
+    category_coverage: dict[str, int]
     catalysts: tuple[str, ...]
     risks: tuple[str, ...]
     uncertainties: tuple[str, ...]
+
+    @property
+    def score(self) -> int:
+        """Backward-compatible alias for the directional recovery score."""
+        return self.recovery_score
 
 
 def build_prompt(context: ResearchContext) -> str:
@@ -81,7 +88,45 @@ def confidence_score(assessments: dict[str, CategoryAssessment]) -> int:
     return round(weighted_total / total_weight)
 
 
-def parse_report(raw_response: str, ticker: str) -> ResearchReport:
+def category_evidence_coverage(context: ResearchContext) -> dict[str, int]:
+    """Score the available source evidence for each research category."""
+    market_coverage = 0
+    if context.market is not None:
+        market_coverage = min(100, round(context.market.bar_count / 20 * 100))
+
+    news_coverage = 0
+    if context.news:
+        article_count = len(context.news)
+        distinct_publishers = len({article.publisher.strip().lower() for article in context.news if article.publisher.strip()})
+        dated_articles = sum(article.published_at is not None for article in context.news)
+        article_points = min(article_count / 5, 1) * 50
+        publisher_points = min(distinct_publishers / 3, 1) * 25
+        date_points = dated_articles / article_count * 25
+        news_coverage = round(article_points + publisher_points + date_points)
+
+    return {
+        "market": market_coverage,
+        "earnings": 0,
+        "news": news_coverage,
+        "macro": 0,
+        "regulation": 0,
+        "sentiment": round(news_coverage * 0.5),
+    }
+
+
+def evidence_coverage_score(category_coverage: dict[str, int]) -> int:
+    """Calculate weighted overall evidence coverage on a 0-100 scale."""
+    total_weight = sum(CATEGORY_WEIGHTS.values())
+    weighted_total = sum(CATEGORY_WEIGHTS[category] * max(0, min(100, category_coverage.get(category, 0))) for category in CATEGORIES)
+    return round(weighted_total / total_weight)
+
+
+def parse_report(
+    raw_response: str,
+    ticker: str,
+    *,
+    category_coverage: dict[str, int] | None = None,
+) -> ResearchReport:
     """Validate Ollama JSON and calculate its score without trusting model arithmetic."""
     try:
         payload: Any = json.loads(raw_response)
@@ -131,7 +176,18 @@ def parse_report(raw_response: str, ticker: str) -> ResearchReport:
         missing = ", ".join(category.title() for category in CATEGORIES if category in missing_categories)
         lists["uncertainties"] = (*lists["uncertainties"], f"The local model did not assess: {missing}.")
 
-    return ResearchReport(ticker.strip().upper(), summary.strip(), confidence_score(assessments), assessments, lists["catalysts"], lists["risks"], lists["uncertainties"])
+    coverage = {category: max(0, min(100, (category_coverage or {}).get(category, 0))) for category in CATEGORIES}
+    return ResearchReport(
+        ticker.strip().upper(),
+        summary.strip(),
+        confidence_score(assessments),
+        evidence_coverage_score(coverage),
+        assessments,
+        coverage,
+        lists["catalysts"],
+        lists["risks"],
+        lists["uncertainties"],
+    )
 
 
 def generate_report(
@@ -146,4 +202,4 @@ def generate_report(
     raw_response = client.generate(build_prompt(context), json_response=True)
     if on_stage is not None:
         on_stage("Validating the structured report")
-    return parse_report(raw_response, context.ticker)
+    return parse_report(raw_response, context.ticker, category_coverage=category_evidence_coverage(context))

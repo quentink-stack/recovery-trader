@@ -21,6 +21,7 @@ class ResearchContextTests(TestCase):
         self.assertEqual(context.ticker, "TEST")
         self.assertEqual(context.market.latest_day, "2026-08-24")  # type: ignore[union-attr]
         self.assertEqual(context.market.lookback_start, "2026-08-21")  # type: ignore[union-attr]
+        self.assertEqual(context.market.bar_count, 2)  # type: ignore[union-attr]
         self.assertAlmostEqual(context.market.return_pct, (108 / 102 - 1) * 100)  # type: ignore[union-attr]
         self.assertEqual(context.to_payload()["news"][0]["published_at"], "2026-08-24T12:00:00+00:00")
 

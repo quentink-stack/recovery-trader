@@ -1,12 +1,12 @@
 import json
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from unittest import TestCase
 from unittest.mock import Mock
 
 from recovery_trader.domain.market import DailyBar
 from recovery_trader.integrations.news import NewsArticle
 from recovery_trader.research.context import build_research_context
-from recovery_trader.research.report import build_prompt, generate_report, parse_report
+from recovery_trader.research.report import build_prompt, category_evidence_coverage, evidence_coverage_score, generate_report, parse_report
 
 
 class ResearchReportTests(TestCase):
@@ -63,10 +63,43 @@ class ResearchReportTests(TestCase):
 
         report = generate_report(self.context, client, on_stage=stages.append)
 
-        self.assertEqual(report.score, 50)
+        self.assertEqual(report.recovery_score, 50)
+        self.assertEqual(report.evidence_coverage, 8)
         client.generate.assert_called_once()
         self.assertTrue(client.generate.call_args.kwargs["json_response"])
         self.assertEqual(stages, ["Generating report with local Qwen3", "Validating the structured report"])
+
+    def test_evidence_coverage_uses_market_depth_and_news_source_breadth(self) -> None:
+        bars = [
+            DailyBar(date(2026, 7, 27) + timedelta(days=index), 100, 102, 99, 101)
+            for index in range(20)
+        ]
+        articles = [
+            NewsArticle(
+                f"TEST article {index}",
+                ("Publisher A", "Publisher B", "Publisher C")[index % 3],
+                f"https://example.com/{index}",
+                datetime(2026, 8, 20 + index, tzinfo=timezone.utc),
+            )
+            for index in range(5)
+        ]
+        context = build_research_context("TEST", bars, articles, as_of=date(2026, 8, 24))
+
+        coverage = category_evidence_coverage(context)
+
+        self.assertEqual(coverage["market"], 100)
+        self.assertEqual(coverage["news"], 100)
+        self.assertEqual(coverage["sentiment"], 50)
+        self.assertEqual(coverage["earnings"], 0)
+        self.assertEqual(evidence_coverage_score(coverage), 55)
+
+    def test_no_sources_produce_zero_evidence_coverage(self) -> None:
+        context = build_research_context("TEST", [], [], as_of=date(2026, 8, 24))
+
+        coverage = category_evidence_coverage(context)
+
+        self.assertTrue(all(value == 0 for value in coverage.values()))
+        self.assertEqual(evidence_coverage_score(coverage), 0)
 
     def test_missing_category_is_recorded_as_an_explicit_uncertainty(self) -> None:
         payload = self.report_payload()

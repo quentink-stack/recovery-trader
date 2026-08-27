@@ -18,6 +18,7 @@ class MarketSummary:
     return_pct: float
     high: float
     low: float
+    bar_count: int
 
 
 @dataclass(frozen=True)
@@ -73,6 +74,7 @@ def build_research_context(
             return_pct=(latest_bar.close / first_bar.close - 1) * 100,
             high=max(bar.high for bar in recent_bars),
             low=min(bar.low for bar in recent_bars),
+            bar_count=len(recent_bars),
         )
 
     return ResearchContext(normalized_ticker, (as_of or date.today()).isoformat(), market, tuple(articles))

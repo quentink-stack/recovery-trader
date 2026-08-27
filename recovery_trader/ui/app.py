@@ -201,9 +201,11 @@ def screen_page(min_drop: float) -> None:
 
 def display_report(report: ResearchReport) -> None:
     st.subheader(f"{report.ticker} research report")
-    score_column, summary_column = st.columns([1, 3])
+    score_column, coverage_column, summary_column = st.columns([1, 1, 3])
     with score_column:
-        st.metric("Weighted research score", f"{report.score}/100")
+        st.metric("Recovery score", f"{report.recovery_score}/100")
+    with coverage_column:
+        st.metric("Evidence coverage", f"{report.evidence_coverage}/100")
     with summary_column:
         st.write(report.summary)
 
@@ -212,13 +214,20 @@ def display_report(report: ResearchReport) -> None:
         {
             "Category": category.title(),
             "Weight": f"{CATEGORY_WEIGHTS[category]}%",
+            "Coverage": report.category_coverage[category],
             "Rating": assessment.rating.title(),
             "Evidence": assessment.evidence,
         }
         for category, assessment in report.assessments.items()
     ])
-    st.dataframe(assessment_frame, hide_index=True)
-    st.caption("Market (30%) and earnings (25%) carry the most weight. News is 20%; macro and sentiment are 10% each; regulation is 5%.")
+    st.dataframe(
+        assessment_frame,
+        hide_index=True,
+        column_config={
+            "Coverage": st.column_config.ProgressColumn("Coverage", min_value=0, max_value=100, format="%d%%"),
+        },
+    )
+    st.caption("Recovery score measures direction; evidence coverage measures the weighted completeness of the supplied sources. Market (30%) and earnings (25%) carry the most weight.")
 
     catalyst_column, risk_column, uncertainty_column = st.columns(3)
     with catalyst_column:
@@ -285,7 +294,7 @@ def ticker_research_section() -> None:
         render_saved_research_status(status_slot)
 
     report = st.session_state.get("ticker_research_report")
-    if isinstance(report, ResearchReport):
+    if isinstance(report, ResearchReport) and hasattr(report, "evidence_coverage"):
         display_report(report)
         context = st.session_state.get("ticker_research_context")
         if context is not None:
@@ -297,6 +306,9 @@ def ticker_research_section() -> None:
             else:
                 st.caption("No recent news articles were returned.")
         st.caption("Research output is informational only and is not investment advice.")
+    elif report is not None:
+        st.session_state.pop("ticker_research_report", None)
+        st.info("The saved report used the prior one-score format. Run ticker research again to calculate recovery score and evidence coverage.")
 
 
 def main() -> None:
