@@ -41,8 +41,20 @@ class ResearchReportTests(TestCase):
         report = parse_report(json.dumps(payload), "test")
 
         self.assertEqual(report.ticker, "TEST")
-        self.assertEqual(report.score, 83)
+        self.assertEqual(report.score, 80)
         self.assertEqual(report.risks, ("Potential risk",))
+
+    def test_market_and_earnings_have_more_influence_than_sentiment(self) -> None:
+        market_negative = self.report_payload("positive")
+        market_negative["score_categories"]["market"]["rating"] = "negative"
+        sentiment_negative = self.report_payload("positive")
+        sentiment_negative["score_categories"]["sentiment"]["rating"] = "negative"
+
+        market_report = parse_report(json.dumps(market_negative), "TEST")
+        sentiment_report = parse_report(json.dumps(sentiment_negative), "TEST")
+
+        self.assertEqual(market_report.score, 70)
+        self.assertEqual(sentiment_report.score, 90)
 
     def test_generation_uses_prompt_and_parses_response(self) -> None:
         client = Mock()

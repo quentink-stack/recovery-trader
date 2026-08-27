@@ -15,7 +15,7 @@ from recovery_trader.integrations.alpaca import AlpacaMarketData
 from recovery_trader.integrations.news import NewsClient
 from recovery_trader.integrations.ollama import OllamaClient
 from recovery_trader.domain.screener import latest_large_drop, load_watchlist
-from recovery_trader.research.report import ResearchReport, generate_report
+from recovery_trader.research.report import CATEGORY_WEIGHTS, ResearchReport, generate_report
 from recovery_trader.research.service import ResearchService
 
 ROOT = Path(__file__).parents[2]
@@ -203,16 +203,22 @@ def display_report(report: ResearchReport) -> None:
     st.subheader(f"{report.ticker} research report")
     score_column, summary_column = st.columns([1, 3])
     with score_column:
-        st.metric("Research confidence", f"{report.score}/100")
+        st.metric("Weighted research score", f"{report.score}/100")
     with summary_column:
         st.write(report.summary)
 
     st.write("**Category assessments**")
     assessment_frame = pd.DataFrame([
-        {"Category": category.title(), "Rating": assessment.rating.title(), "Evidence": assessment.evidence}
+        {
+            "Category": category.title(),
+            "Weight": f"{CATEGORY_WEIGHTS[category]}%",
+            "Rating": assessment.rating.title(),
+            "Evidence": assessment.evidence,
+        }
         for category, assessment in report.assessments.items()
     ])
     st.dataframe(assessment_frame, hide_index=True)
+    st.caption("Market (30%) and earnings (25%) carry the most weight. News is 20%; macro and sentiment are 10% each; regulation is 5%.")
 
     catalyst_column, risk_column, uncertainty_column = st.columns(3)
     with catalyst_column:

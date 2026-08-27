@@ -11,6 +11,14 @@ from recovery_trader.research.context import ResearchContext
 
 CATEGORIES = ("market", "earnings", "news", "macro", "regulation", "sentiment")
 RATING_VALUES = {"negative": 0, "neutral": 50, "positive": 100}
+CATEGORY_WEIGHTS = {
+    "market": 30,
+    "earnings": 25,
+    "news": 20,
+    "macro": 10,
+    "sentiment": 10,
+    "regulation": 5,
+}
 RATING_ALIASES = {
     "bearish": "negative",
     "bullish": "positive",
@@ -65,8 +73,12 @@ Evidence:
 
 
 def confidence_score(assessments: dict[str, CategoryAssessment]) -> int:
-    """Calculate an equal-weight 0-100 score from validated category ratings."""
-    return round(sum(RATING_VALUES[item.rating] for item in assessments.values()) / len(assessments))
+    """Calculate a weighted 0-100 research score from validated ratings."""
+    total_weight = sum(CATEGORY_WEIGHTS[category] for category in assessments)
+    if total_weight == 0:
+        raise ValueError("At least one category assessment is required to calculate a score.")
+    weighted_total = sum(RATING_VALUES[assessment.rating] * CATEGORY_WEIGHTS[category] for category, assessment in assessments.items())
+    return round(weighted_total / total_weight)
 
 
 def parse_report(raw_response: str, ticker: str) -> ResearchReport:
