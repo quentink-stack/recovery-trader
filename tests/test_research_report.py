@@ -111,6 +111,20 @@ class ResearchReportTests(TestCase):
         self.assertEqual(report.assessments["macro"].evidence, "The local model did not provide an assessment for this category.")
         self.assertIn("The local model did not assess: Macro.", report.uncertainties)
 
+    def test_missing_summary_and_optional_lists_are_recorded_as_uncertainties(self) -> None:
+        payload = self.report_payload()
+        payload.pop("summary")
+        payload["catalysts"] = "not a list"
+        payload.pop("uncertainties")
+
+        report = parse_report(json.dumps(payload), "TEST")
+
+        self.assertIn("did not provide a narrative summary", report.summary)
+        self.assertEqual(report.catalysts, ())
+        self.assertIn("The local model did not provide a narrative summary.", report.uncertainties)
+        self.assertIn("The local model did not provide a valid catalysts list.", report.uncertainties)
+        self.assertIn("The local model did not provide a valid uncertainties list.", report.uncertainties)
+
     def test_top_level_or_omitted_category_container_is_recovered(self) -> None:
         top_level_payload = self.report_payload()
         top_level_payload.update(top_level_payload.pop("score_categories"))

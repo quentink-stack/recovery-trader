@@ -13,7 +13,7 @@ from urllib.request import Request, urlopen
 class OllamaConfig:
     base_url: str = "http://localhost:11434"
     model: str = "qwen3:8b-q4_K_M"
-    timeout: int = 300
+    timeout: int = 420
     temperature: float = 0.15
 
     @classmethod

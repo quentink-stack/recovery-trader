@@ -30,16 +30,16 @@ ollama run qwen3:8b-q4_K_M "Reply READY"
 
 If `ollama serve` reports that the address is already in use, Ollama is already running and you can continue with the second window.
 
-Override the defaults with environment variables when needed:
+The client reads these settings automatically when it starts. The values shown below are the defaults; set any of them before starting Streamlit to override them:
 
 ```powershell
 $env:OLLAMA_BASE_URL = 'http://localhost:11434'
 $env:OLLAMA_MODEL = 'qwen3:8b-q4_K_M'
-$env:OLLAMA_TIMEOUT = 300
+$env:OLLAMA_TIMEOUT = 420
 $env:OLLAMA_TEMPERATURE = 0.15
 ```
 
-The default request timeout is 300 seconds (five minutes) and the default temperature is `0.15`, which favors repeatable, evidence-grounded structured reports while preserving Qwen's reasoning mode. Set `OLLAMA_TIMEOUT` or `OLLAMA_TEMPERATURE` before starting Streamlit to override either value. Restart Streamlit after changing any Ollama environment variable.
+`OLLAMA_TIMEOUT` is measured in seconds and defaults to 420 (seven minutes). A temperature of `0.15` favors repeatable, evidence-grounded structured reports while preserving Qwen's reasoning mode. Restart Streamlit after changing any Ollama environment variable.
 
 The reusable client is in `ollama_client.py`. It provides `is_available()` for a health check and `generate()` for non-streaming model responses. JSON mode is enabled by default for the structured research report planned below.
 

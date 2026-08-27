@@ -162,19 +162,39 @@ def parse_report(
             raise ValueError(f"Invalid Ollama assessment for {category}.")
         assessments[category] = CategoryAssessment(rating, evidence.strip())
 
+    model_omissions: list[str] = []
     summary = payload.get("summary")
     if not isinstance(summary, str) or not summary.strip():
-        raise ValueError("Ollama report must contain a summary.")
+        alternate_summary = next(
+            (
+                payload.get(field)
+                for field in ("analysis", "overview")
+                if isinstance(payload.get(field), str) and payload.get(field).strip()
+            ),
+            None,
+        )
+        if isinstance(alternate_summary, str):
+            summary = alternate_summary
+        else:
+            summary = "The local model did not provide a narrative summary. Review the category assessments and source evidence below."
+            model_omissions.append("The local model did not provide a narrative summary.")
     lists: dict[str, tuple[str, ...]] = {}
     for field in ("catalysts", "risks", "uncertainties"):
         value = payload.get(field)
-        if not isinstance(value, list) or not all(isinstance(item, str) and item.strip() for item in value):
-            raise ValueError(f"Ollama report field '{field}' must be a list of non-empty strings.")
-        lists[field] = tuple(item.strip() for item in value)
+        if isinstance(value, list):
+            entries = tuple(item.strip() for item in value if isinstance(item, str) and item.strip())
+            lists[field] = entries
+            if len(entries) != len(value):
+                model_omissions.append(f"The local model provided an incomplete {field} list.")
+        else:
+            lists[field] = ()
+            model_omissions.append(f"The local model did not provide a valid {field} list.")
 
     if missing_categories:
         missing = ", ".join(category.title() for category in CATEGORIES if category in missing_categories)
         lists["uncertainties"] = (*lists["uncertainties"], f"The local model did not assess: {missing}.")
+    if model_omissions:
+        lists["uncertainties"] = (*lists["uncertainties"], *model_omissions)
 
     coverage = {category: max(0, min(100, (category_coverage or {}).get(category, 0))) for category in CATEGORIES}
     return ResearchReport(
