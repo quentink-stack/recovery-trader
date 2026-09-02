@@ -86,6 +86,8 @@ timeout_seconds = 30
 
 Alternatively, set `SEC_USER_AGENT` before starting Python. `SEC_TIMEOUT` can override the 30-second request timeout.
 
+When ticker research runs, Recovery Trader fetches SEC filing metadata and 10-Q/10-K facts for preview in the app. The preview also shows the public-release age, a freshness-adjusted earnings-confidence indicator, and an estimated next earnings date based on recent Item 2.02 filing cadence. The estimate is not company-confirmed. These preview measures do not modify raw GAAP values and are not yet supplied to Qwen or used in either top-level score.
+
 The Streamlit app reads Alpaca Basic market data only; it has no order, account, or position endpoints.
 
 - **Run dip-recovery backtest** downloads two years of daily bars for a ticker and tests a simple proxy: a qualifying drop from one session's close to the next session's close, entry at the following open, a 15-trading-day maximum hold, 10% stop, and 12% target.

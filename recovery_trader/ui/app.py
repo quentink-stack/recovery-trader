@@ -14,7 +14,9 @@ import streamlit as st
 from recovery_trader.integrations.alpaca import AlpacaMarketData
 from recovery_trader.integrations.news import NewsClient
 from recovery_trader.integrations.ollama import OllamaClient
+from recovery_trader.integrations.sec_edgar import EarningsFacts, SecEdgarClient
 from recovery_trader.domain.screener import latest_large_drop, load_watchlist
+from recovery_trader.research.context import EarningsEvidence, ResearchContext
 from recovery_trader.research.report import CATEGORY_WEIGHTS, ResearchReport, generate_report
 from recovery_trader.research.service import ResearchService
 
@@ -122,8 +124,17 @@ def ollama_client() -> OllamaClient:
 
 
 @st.cache_resource
+def sec_edgar_client(user_agent: str, timeout: int) -> SecEdgarClient:
+    return SecEdgarClient(user_agent, timeout)
+
+
 def research_service() -> ResearchService:
-    return ResearchService(client(), news_client())
+    try:
+        configured_client = SecEdgarClient.from_config()
+        sec_client = sec_edgar_client(configured_client.user_agent, configured_client.timeout)
+        return ResearchService(client(), news_client(), sec_client=sec_client)
+    except ValueError as exc:
+        return ResearchService(client(), news_client(), sec_setup_error=str(exc))
 
 
 @st.cache_data(ttl="15m", max_entries=16, show_spinner=False)
@@ -244,6 +255,78 @@ def display_report(report: ResearchReport) -> None:
             st.markdown(f"- {item}")
 
 
+def _format_sec_metric(value: float | None, *, scale_billions: bool = False) -> str:
+    if value is None:
+        return "Not reported"
+    if scale_billions:
+        return f"${value / 1_000_000_000:,.2f}B"
+    return f"${value:,.2f}"
+
+
+def display_earnings_preview(earnings: EarningsEvidence | None) -> None:
+    st.subheader("SEC earnings data preview")
+    st.caption("This SEC data is for inspection only. It is not yet supplied to Qwen or used in either top-level score.")
+    if earnings is None:
+        st.info("SEC earnings collection was not configured for this run.")
+        return
+    if earnings.error:
+        st.warning(earnings.error)
+        return
+    if earnings.cik:
+        st.caption(f"CIK: {earnings.cik}")
+    if earnings.release is not None:
+        release = earnings.release
+        st.markdown(
+            f"Latest Item 2.02 / EX-99.1 release: [{release.exhibit_name}]({release.exhibit_url}) "
+            f"filed {release.filing.filing_date.isoformat()}"
+        )
+    else:
+        st.caption("No Item 2.02 8-K with an EX-99.1 exhibit was found in the recent filing history.")
+
+    timing_rows = [
+        {"Measure": "Public release date", "Value": earnings.public_release_date.isoformat() if earnings.public_release_date else "Unavailable"},
+        {"Measure": "Days since release", "Value": f"{earnings.days_since_release} calendar days" if earnings.days_since_release is not None else "Unavailable"},
+        {"Measure": "Event freshness", "Value": f"{earnings.event_freshness}%" if earnings.event_freshness is not None else "Unavailable"},
+        {"Measure": "Estimated next earnings", "Value": earnings.estimated_next_earnings_date.isoformat() if earnings.estimated_next_earnings_date else "Unavailable"},
+        {"Measure": "Days until estimated earnings", "Value": _format_days_until(earnings.days_until_next_expected_earnings)},
+        {"Measure": "Raw GAAP data coverage", "Value": f"{earnings.raw_data_coverage}%"},
+        {"Measure": "Earnings confidence", "Value": f"{earnings.confidence}%"},
+        {"Measure": "Available recovery contribution", "Value": f"{earnings.available_recovery_weight:.2f} of 25 points"},
+    ]
+    st.dataframe(pd.DataFrame(timing_rows), hide_index=True, width="content")
+    st.caption(
+        "The next earnings date is an estimate from the median interval between recent Item 2.02 filings, not a company-confirmed date. "
+        "Event freshness reduces evidence confidence and the available earnings contribution only; it does not modify any raw GAAP result."
+    )
+    facts = earnings.facts
+    if facts is None:
+        st.info("No matching 10-Q or 10-K XBRL facts were found.")
+        return
+    fact_rows = [
+        {"Metric": "Revenue", "Value": _format_sec_metric(facts.revenue, scale_billions=True)},
+        {"Metric": "Net income", "Value": _format_sec_metric(facts.net_income, scale_billions=True)},
+        {"Metric": "Basic EPS", "Value": _format_sec_metric(facts.eps_basic)},
+        {"Metric": "Diluted EPS", "Value": _format_sec_metric(facts.eps_diluted)},
+        {"Metric": "Cash", "Value": _format_sec_metric(facts.cash, scale_billions=True)},
+    ]
+    st.dataframe(pd.DataFrame(fact_rows), hide_index=True, width="content")
+    period_start = facts.period_start.isoformat() if facts.period_start else "not reported"
+    fiscal_label = " ".join(part for part in (str(facts.fiscal_year) if facts.fiscal_year else "", facts.fiscal_period or "") if part)
+    st.caption(
+        f"Source: {facts.form} filed {facts.filing_date.isoformat()} · "
+        f"period {period_start} to {facts.period_end.isoformat()} · "
+        f"{fiscal_label or 'fiscal period not reported'} · accession {facts.accession_number}"
+    )
+
+
+def _format_days_until(days: int | None) -> str:
+    if days is None:
+        return "Unavailable"
+    if days < 0:
+        return f"Overdue by {abs(days)} calendar days"
+    return f"{days} calendar days"
+
+
 def ticker_research_section() -> None:
     st.header("Ticker research")
     st.caption("Combines recent market data and news, then asks the local Qwen3 model for a structured, evidence-grounded assessment.")
@@ -297,7 +380,8 @@ def ticker_research_section() -> None:
     if isinstance(report, ResearchReport) and hasattr(report, "evidence_coverage"):
         display_report(report)
         context = st.session_state.get("ticker_research_context")
-        if context is not None:
+        if isinstance(context, ResearchContext):
+            display_earnings_preview(context.earnings)
             st.write("**Sources**")
             if context.news:
                 for article in context.news:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from configparser import ConfigParser
 from dataclasses import dataclass
 from datetime import date
@@ -207,8 +208,7 @@ class SecEdgarClient:
                 if not isinstance(item, dict):
                     continue
                 exhibit_name = item.get("name")
-                exhibit_type = str(item.get("type", "")).upper()
-                if not isinstance(exhibit_name, str) or exhibit_type != "EX-99.1":
+                if not isinstance(exhibit_name, str) or not _is_exhibit_99_1(item, exhibit_name):
                     continue
                 return EarningsRelease(filing, exhibit_name, f"{SEC_ARCHIVES_URL}/{archive_cik}/{accession_path}/{exhibit_name}")
         return None
@@ -309,3 +309,10 @@ def _matched_fact_value(facts: Iterable[_XbrlFact], tags: tuple[str, ...], ancho
         )
     )
     return candidates[0].value
+
+
+def _is_exhibit_99_1(item: dict[str, Any], filename: str) -> bool:
+    """Identify EX-99.1 when the SEC directory index omits document types."""
+    if str(item.get("type", "")).upper() == "EX-99.1":
+        return True
+    return re.search(r"(?:exhibit|ex)[-_]?99[-_]?1", filename.lower()) is not None

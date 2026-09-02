@@ -7,6 +7,13 @@ from datetime import date
 
 from recovery_trader.domain.market import DailyBar
 from recovery_trader.integrations.news import NewsArticle
+from recovery_trader.integrations.sec_edgar import EarningsFacts, EarningsRelease
+
+
+# Keep this aligned with the deterministic category weights in report.py.  The
+# SEC preview does not yet change the report score, but it can show how much of
+# the earnings category is supportable by the available, timely evidence.
+EARNINGS_RECOVERY_WEIGHT = 25
 
 
 @dataclass(frozen=True)
@@ -22,11 +29,30 @@ class MarketSummary:
 
 
 @dataclass(frozen=True)
+class EarningsEvidence:
+    """SEC data collected for preview only; it is not yet sent to Qwen."""
+
+    cik: str | None = None
+    release: EarningsRelease | None = None
+    facts: EarningsFacts | None = None
+    error: str | None = None
+    public_release_date: date | None = None
+    days_since_release: int | None = None
+    event_freshness: int | None = None
+    estimated_next_earnings_date: date | None = None
+    days_until_next_expected_earnings: int | None = None
+    raw_data_coverage: int = 0
+    confidence: int = 0
+    available_recovery_weight: float = 0.0
+
+
+@dataclass(frozen=True)
 class ResearchContext:
     ticker: str
     as_of: str
     market: MarketSummary | None
     news: tuple[NewsArticle, ...]
+    earnings: EarningsEvidence | None = None
 
     def to_payload(self) -> dict:
         """Return JSON-serializable evidence for an Ollama prompt."""
@@ -53,6 +79,7 @@ def build_research_context(
     *,
     as_of: date | None = None,
     lookback_bars: int = 30,
+    earnings: EarningsEvidence | None = None,
 ) -> ResearchContext:
     """Build a compact context from recent bars and already-fetched news."""
     normalized_ticker = ticker.strip().upper()
@@ -77,4 +104,4 @@ def build_research_context(
             bar_count=len(recent_bars),
         )
 
-    return ResearchContext(normalized_ticker, (as_of or date.today()).isoformat(), market, tuple(articles))
+    return ResearchContext(normalized_ticker, (as_of or date.today()).isoformat(), market, tuple(articles), earnings)

@@ -88,6 +88,17 @@ class SecEdgarClientTests(TestCase):
         self.assertTrue(release.exhibit_url.endswith("/earnings.htm"))
         self.assertEqual(requested, [first_index, second_index])
 
+    def test_directory_filename_pattern_identifies_sec_exhibit_when_type_is_not_present(self) -> None:
+        filing = _filing("0001-26-000002", date(2026, 8, 1))
+        index_url = f"{SEC_ARCHIVES_URL}/320193/000126000002/index.json"
+        self.client._get_json = lambda url: {"directory": {"item": [{"name": "a8-kex991q32026.htm", "type": "text.gif"}]}}  # type: ignore[method-assign]
+
+        release = self.client.latest_earnings_release("0000320193", (filing,))
+
+        self.assertIsNotNone(release)
+        assert release is not None
+        self.assertEqual(release.exhibit_name, "a8-kex991q32026.htm")
+
     def test_latest_earnings_facts_are_matched_to_one_filing_period(self) -> None:
         cik = "0000320193"
         payload = {"facts": {"us-gaap": {
