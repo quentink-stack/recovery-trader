@@ -101,12 +101,21 @@ class SecEdgarClientTests(TestCase):
 
     def test_latest_earnings_facts_are_matched_to_one_filing_period(self) -> None:
         cik = "0000320193"
+        current_accession = "0000320193-26-000010"
+        prior_accession = "0000320193-25-000010"
+        current = lambda value, *, start="2026-04-01": _fact("10-Q", "2026-07-30", "2026-06-30", value, start=start, accession=current_accession, fiscal_year=2026)
+        prior = lambda value, *, start="2025-04-01": _fact("10-Q", "2025-07-30", "2025-06-30", value, start=start, accession=prior_accession, fiscal_year=2025)
         payload = {"facts": {"us-gaap": {
-            "RevenueFromContractWithCustomerExcludingAssessedTax": {"units": {"USD": [_fact("10-Q", "2026-07-30", "2026-06-30", 95_000_000_000, start="2026-04-01")]}},
-            "NetIncomeLoss": {"units": {"USD": [_fact("10-Q", "2026-07-30", "2026-06-30", 20_000_000_000, start="2026-04-01")]}},
-            "EarningsPerShareBasic": {"units": {"USD/shares": [_fact("10-Q", "2026-07-30", "2026-06-30", 1.25, start="2026-04-01")]}} ,
-            "EarningsPerShareDiluted": {"units": {"USD/shares": [_fact("10-Q", "2026-07-30", "2026-06-30", 1.24, start="2026-04-01")]}} ,
-            "CashAndCashEquivalentsAtCarryingValue": {"units": {"USD": [_fact("10-Q", "2026-07-30", "2026-06-30", 30_000_000_000)]}},
+            "RevenueFromContractWithCustomerExcludingAssessedTax": {"units": {"USD": [current(95_000_000_000), prior(80_000_000_000)]}},
+            "NetIncomeLoss": {"units": {"USD": [current(20_000_000_000), prior(16_000_000_000)]}},
+            "EarningsPerShareBasic": {"units": {"USD/shares": [current(1.25), prior(1.0)]}},
+            "EarningsPerShareDiluted": {"units": {"USD/shares": [current(1.24), prior(0.98)]}},
+            "CashAndCashEquivalentsAtCarryingValue": {"units": {"USD": [current(30_000_000_000, start=None), prior(25_000_000_000, start=None)]}},
+            "OperatingIncomeLoss": {"units": {"USD": [current(25_000_000_000), prior(18_000_000_000)]}},
+            "NetCashProvidedByUsedInOperatingActivities": {"units": {"USD": [current(28_000_000_000), prior(24_000_000_000)]}},
+            "PaymentsToAcquirePropertyPlantAndEquipment": {"units": {"USD": [current(5_000_000_000), prior(4_000_000_000)]}},
+            "LongTermDebt": {"units": {"USD": [current(50_000_000_000, start=None), prior(52_000_000_000, start=None)]}},
+            "WeightedAverageNumberOfDilutedSharesOutstanding": {"units": {"shares": [current(15_000_000_000), prior(16_000_000_000)]}},
         }}}
         requested: list[str] = []
         self.client._get_json = lambda url: (requested.append(url) or payload)  # type: ignore[method-assign]
@@ -123,6 +132,15 @@ class SecEdgarClientTests(TestCase):
         self.assertEqual(facts.eps_basic, 1.25)
         self.assertEqual(facts.eps_diluted, 1.24)
         self.assertEqual(facts.cash, 30_000_000_000.0)
+        self.assertEqual(facts.operating_income, 25_000_000_000.0)
+        self.assertEqual(facts.operating_cash_flow, 28_000_000_000.0)
+        self.assertEqual(facts.capex, 5_000_000_000.0)
+        self.assertEqual(facts.debt, 50_000_000_000.0)
+        self.assertEqual(facts.diluted_shares, 15_000_000_000.0)
+        self.assertIsNotNone(facts.prior_year)
+        self.assertEqual(facts.prior_year.revenue, 80_000_000_000.0)  # type: ignore[union-attr]
+        as_of_prior = self.client.earnings_facts_as_of(cik, date(2025, 8, 1))
+        self.assertEqual(as_of_prior.filing_date, date(2025, 7, 30))  # type: ignore[union-attr]
 
 
 def _filing(accession_number: str, filing_date: date):
@@ -131,8 +149,17 @@ def _filing(accession_number: str, filing_date: date):
     return SecFiling("0000320193", accession_number, "8-K", filing_date, None, "filing.htm", "Results", ("2.02", "9.01"))
 
 
-def _fact(form: str, filed: str, end: str, value: float, *, start: str | None = None) -> dict:
-    payload = {"form": form, "filed": filed, "end": end, "val": value, "accn": "0000320193-26-000010", "fy": 2026, "fp": "Q2"}
+def _fact(
+    form: str,
+    filed: str,
+    end: str,
+    value: float,
+    *,
+    start: str | None = None,
+    accession: str = "0000320193-26-000010",
+    fiscal_year: int = 2026,
+) -> dict:
+    payload = {"form": form, "filed": filed, "end": end, "val": value, "accn": accession, "fy": fiscal_year, "fp": "Q2"}
     if start is not None:
         payload["start"] = start
     return payload

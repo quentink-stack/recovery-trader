@@ -17,6 +17,7 @@ from recovery_trader.integrations.ollama import OllamaClient
 from recovery_trader.integrations.sec_edgar import EarningsFacts, SecEdgarClient
 from recovery_trader.domain.screener import latest_large_drop, load_watchlist
 from recovery_trader.research.context import EarningsEvidence, ResearchContext
+from recovery_trader.research.earnings_backtest import EarningsBriefBacktest, backtest_earnings_briefs
 from recovery_trader.research.report import CATEGORY_WEIGHTS, ResearchReport, generate_report
 from recovery_trader.research.service import ResearchService
 
@@ -143,6 +144,24 @@ def load_daily_bars(tickers: tuple[str, ...], start: date, end: date, data_versi
     return client().daily_bars_for_symbols(tickers, start, end)
 
 
+def validate_earnings_briefs(
+    ticker: str,
+    start: date,
+    end: date,
+    hold_sessions: int,
+) -> tuple[tuple, EarningsBriefBacktest]:
+    """Run an availability-date-safe validation without involving Qwen.
+
+    SEC responses are already retained by the cached client resource; keeping
+    rich evidence objects out of Streamlit's pickle cache avoids serialization
+    failures during a validation run.
+    """
+    service = research_service()
+    briefs = service.historical_earnings_briefs(ticker, start, end)
+    bars = client().daily_bars(ticker, start, end)
+    return briefs, backtest_earnings_briefs(briefs, bars, hold_sessions=hold_sessions)
+
+
 def user_error(exc: Exception) -> str:
     if isinstance(exc, HTTPError):
         return f"Alpaca returned HTTP {exc.code}. Check your paper API key, secret, and selected feed."
@@ -238,7 +257,7 @@ def display_report(report: ResearchReport) -> None:
             "Coverage": st.column_config.ProgressColumn("Coverage", min_value=0, max_value=100, format="%d%%"),
         },
     )
-    st.caption("Recovery score measures direction; evidence coverage measures the weighted completeness of the supplied sources. Market (30%) and earnings (25%) carry the most weight.")
+    st.caption("Recovery score measures evidence-adjusted direction; category coverage pulls weakly supported ratings toward neutral. Evidence coverage measures weighted source completeness. Market (30%) and earnings (25%) carry the most weight.")
 
     catalyst_column, risk_column, uncertainty_column = st.columns(3)
     with catalyst_column:
@@ -263,9 +282,19 @@ def _format_sec_metric(value: float | None, *, scale_billions: bool = False) -> 
     return f"${value:,.2f}"
 
 
+def _format_earnings_value(label: str, value: float | None) -> str:
+    if value is None:
+        return "Not reported"
+    if label in {"Basic EPS", "Diluted EPS"}:
+        return _format_sec_metric(value)
+    if label == "Diluted shares":
+        return f"{value / 1_000_000:,.1f}M"
+    return _format_sec_metric(value, scale_billions=True)
+
+
 def display_earnings_preview(earnings: EarningsEvidence | None) -> None:
     st.subheader("SEC earnings data preview")
-    st.caption("This SEC data is for inspection only. It is not yet supplied to Qwen or used in either top-level score.")
+    st.caption("This compact SEC brief is supplied to Qwen and its freshness-adjusted confidence contributes to both top-level scores.")
     if earnings is None:
         st.info("SEC earnings collection was not configured for this run.")
         return
@@ -298,18 +327,56 @@ def display_earnings_preview(earnings: EarningsEvidence | None) -> None:
         "The next earnings date is an estimate from the median interval between recent Item 2.02 filings, not a company-confirmed date. "
         "Event freshness reduces evidence confidence and the available earnings contribution only; it does not modify any raw GAAP result."
     )
+
     facts = earnings.facts
     if facts is None:
         st.info("No matching 10-Q or 10-K XBRL facts were found.")
         return
-    fact_rows = [
-        {"Metric": "Revenue", "Value": _format_sec_metric(facts.revenue, scale_billions=True)},
-        {"Metric": "Net income", "Value": _format_sec_metric(facts.net_income, scale_billions=True)},
-        {"Metric": "Basic EPS", "Value": _format_sec_metric(facts.eps_basic)},
-        {"Metric": "Diluted EPS", "Value": _format_sec_metric(facts.eps_diluted)},
-        {"Metric": "Cash", "Value": _format_sec_metric(facts.cash, scale_billions=True)},
-    ]
-    st.dataframe(pd.DataFrame(fact_rows), hide_index=True, width="content")
+    raw_column, brief_column = st.columns(2)
+    with raw_column:
+        st.write("**Raw SEC metrics**")
+        prior = facts.prior_year
+        raw_values = (
+            ("Revenue", facts.revenue, prior.revenue if prior else None),
+            ("Operating income", facts.operating_income, prior.operating_income if prior else None),
+            ("Net income", facts.net_income, prior.net_income if prior else None),
+            ("Basic EPS", facts.eps_basic, None),
+            ("Diluted EPS", facts.eps_diluted, prior.eps_diluted if prior else None),
+            ("Operating cash flow", facts.operating_cash_flow, prior.operating_cash_flow if prior else None),
+            ("Capex", facts.capex, prior.capex if prior else None),
+            ("Debt", facts.debt, prior.debt if prior else None),
+            ("Cash", facts.cash, prior.cash if prior else None),
+            ("Diluted shares", facts.diluted_shares, prior.diluted_shares if prior else None),
+        )
+        st.dataframe(
+            pd.DataFrame(
+                {"Metric": label, "Current": _format_earnings_value(label, current), "Prior-year comparable": _format_earnings_value(label, previous)}
+                for label, current, previous in raw_values
+            ),
+            hide_index=True,
+            width="stretch",
+        )
+    with brief_column:
+        st.write("**Deterministic earnings brief**")
+        brief = earnings.brief
+        if brief is None:
+            st.info("A comparable-period brief could not be built from the reported facts.")
+        else:
+            st.metric("Conclusion", brief.conclusion)
+            st.caption(f"Period alignment: {brief.alignment.reason} · comparable coverage: {brief.comparable_coverage}%")
+            if brief.sector_exception:
+                st.info(brief.sector_exception)
+            derived_rows = [
+                {
+                    "Metric": metric.label,
+                    "YoY change": f"{metric.change_pct:+.1f}%" if metric.change_pct is not None else "Unavailable",
+                    "Assessment": metric.assessment.title(),
+                }
+                for metric in brief.metrics
+            ]
+            st.dataframe(pd.DataFrame(derived_rows), hide_index=True, width="stretch")
+            if brief.findings:
+                st.caption(" · ".join(brief.findings))
     period_start = facts.period_start.isoformat() if facts.period_start else "not reported"
     fiscal_label = " ".join(part for part in (str(facts.fiscal_year) if facts.fiscal_year else "", facts.fiscal_period or "") if part)
     st.caption(
@@ -317,6 +384,60 @@ def display_earnings_preview(earnings: EarningsEvidence | None) -> None:
         f"period {period_start} to {facts.period_end.isoformat()} · "
         f"{fiscal_label or 'fiscal period not reported'} · accession {facts.accession_number}"
     )
+
+
+def display_qwen_evidence_preview(context: ResearchContext) -> None:
+    """Show the exact current evidence boundary sent to Qwen."""
+    with st.container(border=True):
+        st.subheader("Qwen prompt data")
+        st.caption("The current JSON below is serialized inside the Qwen prompt exactly as shown.")
+        st.write("**Currently sent to Qwen**")
+        st.json(context.to_payload(), expanded=False)
+
+
+def earnings_validation_section() -> None:
+    st.header("Validate earnings briefs")
+    st.caption("Uses Item 2.02 filing dates as public availability, enters at the following session's open, and never uses same-day information.")
+    with st.form("earnings_brief_validation"):
+        ticker = st.text_input("Ticker for validation", placeholder="e.g. AAPL").strip().upper()
+        hold_sessions = st.slider("Forward holding period", min_value=1, max_value=60, value=10)
+        submitted = st.form_submit_button("Run point-in-time validation")
+    if not submitted:
+        return
+    if not ticker:
+        st.warning("Enter a ticker symbol first.")
+        return
+    end = date.today()
+    start = end - timedelta(days=365 * 3)
+    try:
+        with st.spinner("Collecting historical SEC availability dates and Alpaca bars…"):
+            briefs, result = validate_earnings_briefs(ticker, start, end, hold_sessions)
+    except Exception as exc:
+        st.error(user_error(exc))
+        return
+    st.caption(f"{len(briefs)} SEC briefs considered from {start.isoformat()} through {end.isoformat()}.")
+    metric_column, return_column = st.columns(2)
+    with metric_column:
+        st.metric("Constructive brief trades", len(result.trades))
+    with return_column:
+        st.metric("Average forward return", f"{result.average_return:.2f}%")
+    if result.trades:
+        st.dataframe(
+            pd.DataFrame(
+                {
+                    "Availability date": trade.availability_date,
+                    "Entry date": trade.entry_day,
+                    "Exit date": trade.exit_day,
+                    "Return": trade.return_pct,
+                    "Conclusion": trade.conclusion,
+                }
+                for trade in result.trades
+            ),
+            hide_index=True,
+            column_config={"Return": st.column_config.NumberColumn(format="%.2f%%")},
+        )
+    else:
+        st.info("No constructive, period-aligned earnings briefs had a following trading session in this window.")
 
 
 def _format_days_until(days: int | None) -> str:
@@ -381,6 +502,7 @@ def ticker_research_section() -> None:
         display_report(report)
         context = st.session_state.get("ticker_research_context")
         if isinstance(context, ResearchContext):
+            display_qwen_evidence_preview(context)
             display_earnings_preview(context.earnings)
             st.write("**Sources**")
             if context.news:
@@ -397,6 +519,8 @@ def ticker_research_section() -> None:
 
 def main() -> None:
     min_drop = configure_sidebar()
+    earnings_validation_section()
+    st.divider()
     ticker_research_section()
     st.divider()
     page = st.navigation([st.Page(lambda: screen_page(min_drop), title="Drop screener", icon="📉", url_path="screener", default=True)])

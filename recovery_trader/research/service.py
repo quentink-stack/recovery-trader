@@ -8,8 +8,9 @@ from typing import Callable
 
 from recovery_trader.integrations.alpaca import AlpacaMarketData
 from recovery_trader.integrations.news import NewsClient
-from recovery_trader.integrations.sec_edgar import EarningsFacts, EarningsRelease, SecEdgarClient, SecEdgarError, SecFiling
+from recovery_trader.integrations.sec_edgar import CompanyProfile, EarningsFacts, EarningsRelease, SecEdgarClient, SecEdgarError, SecFiling
 from recovery_trader.research.context import EARNINGS_RECOVERY_WEIGHT, EarningsEvidence, ResearchContext, build_research_context
+from recovery_trader.research.earnings import EarningsBrief, build_earnings_brief
 
 ResearchStageCallback = Callable[[str], None]
 
@@ -51,6 +52,50 @@ class ResearchService:
         _report_stage(on_stage, "Preparing evidence")
         return build_research_context(ticker, bars, articles, as_of=research_date, lookback_bars=lookback_bars, earnings=earnings)
 
+    def collect_earnings_preview(
+        self,
+        ticker: str,
+        *,
+        as_of: date | None = None,
+        on_stage: ResearchStageCallback | None = None,
+    ) -> EarningsEvidence | None:
+        """Collect SEC-only evidence without market, news, or model work."""
+        return self._collect_earnings(ticker, as_of or date.today(), on_stage)
+
+    def historical_earnings_briefs(
+        self,
+        ticker: str,
+        start: date,
+        end: date,
+        *,
+        on_stage: ResearchStageCallback | None = None,
+    ) -> tuple[EarningsBrief, ...]:
+        """Build historical briefs using each Item 2.02 filing date as availability."""
+        if self.sec_setup_error:
+            raise ValueError(self.sec_setup_error)
+        if self.sec_client is None:
+            raise ValueError("SEC earnings collection is not configured.")
+        cik = self.sec_client.cik_for_ticker(ticker)
+        _report_stage(on_stage, "Fetching SEC filing history")
+        filings = self.sec_client.filing_history(cik)
+        profile = self.sec_client.company_profile(cik)
+        release_filings = sorted(
+            (
+                filing
+                for filing in filings
+                if filing.form == "8-K" and "2.02" in filing.items and start <= filing.filing_date <= end
+            ),
+            key=lambda filing: filing.filing_date,
+        )
+        _report_stage(on_stage, "Building point-in-time SEC earnings briefs")
+        briefs: list[EarningsBrief] = []
+        for filing in release_filings:
+            facts = self.sec_client.earnings_facts_as_of(cik, filing.filing_date)
+            brief = build_earnings_brief(facts, profile, availability_date=filing.filing_date)
+            if brief is not None:
+                briefs.append(brief)
+        return tuple(briefs)
+
     def _collect_earnings(
         self,
         ticker: str,
@@ -66,11 +111,13 @@ class ResearchService:
             cik = self.sec_client.cik_for_ticker(ticker)
             _report_stage(on_stage, "Fetching SEC filing history")
             filings = self.sec_client.filing_history(cik)
+            _report_stage(on_stage, "Reading SEC company classification")
+            profile = self.sec_client.company_profile(cik)
             _report_stage(on_stage, "Fetching structured SEC earnings facts")
             facts = self.sec_client.latest_earnings_facts(cik)
             _report_stage(on_stage, "Finding earnings-release exhibit")
             release = self.sec_client.latest_earnings_release(cik, filings)
-            return _build_earnings_evidence(cik, release, facts, filings, research_date)
+            return _build_earnings_evidence(cik, release, facts, profile, filings, research_date)
         except (SecEdgarError, ValueError) as exc:
             return EarningsEvidence(error=f"SEC earnings preview unavailable: {exc}")
 
@@ -79,6 +126,7 @@ def _build_earnings_evidence(
     cik: str,
     release: EarningsRelease | None,
     facts: EarningsFacts | None,
+    profile: CompanyProfile | None,
     filings: tuple[SecFiling, ...],
     research_date: date,
 ) -> EarningsEvidence:
@@ -93,12 +141,17 @@ def _build_earnings_evidence(
         (estimated_next_earnings_date - research_date).days if estimated_next_earnings_date else None
     )
     raw_data_coverage = _raw_data_coverage(release, facts)
-    confidence = round(raw_data_coverage * event_freshness / 100) if event_freshness is not None else 0
+    brief = build_earnings_brief(facts, profile, availability_date=public_release_date or research_date)
+    comparable_coverage = brief.comparable_coverage if brief is not None else 0
+    evidence_coverage = round(raw_data_coverage * 0.4 + comparable_coverage * 0.6)
+    confidence = round(evidence_coverage * event_freshness / 100) if event_freshness is not None else 0
     available_recovery_weight = round(EARNINGS_RECOVERY_WEIGHT * confidence / 100, 2)
     return EarningsEvidence(
         cik=cik,
         release=release,
         facts=facts,
+        profile=profile,
+        brief=brief,
         public_release_date=public_release_date,
         days_since_release=days_since_release,
         event_freshness=event_freshness,

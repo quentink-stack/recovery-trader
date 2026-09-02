@@ -5,7 +5,8 @@ from unittest.mock import Mock
 
 from recovery_trader.domain.market import DailyBar
 from recovery_trader.integrations.news import NewsArticle
-from recovery_trader.research.context import build_research_context
+from recovery_trader.research.context import EarningsEvidence, build_research_context
+from recovery_trader.research.earnings import EarningsBrief, PeriodAlignment
 from recovery_trader.research.report import REPORT_RESPONSE_SCHEMA, build_prompt, category_evidence_coverage, evidence_coverage_score, generate_report, parse_report
 
 
@@ -93,6 +94,42 @@ class ResearchReportTests(TestCase):
         self.assertEqual(coverage["sentiment"], 50)
         self.assertEqual(coverage["earnings"], 0)
         self.assertEqual(evidence_coverage_score(coverage), 55)
+
+    def test_earnings_coverage_uses_freshness_adjusted_confidence(self) -> None:
+        brief = EarningsBrief(
+            date(2026, 8, 1),
+            "2026 Q2",
+            PeriodAlignment(True, "Aligned."),
+            None,
+            100,
+            "Constructive comparable-period trend",
+            (),
+            (),
+        )
+        context = build_research_context(
+            "TEST",
+            [],
+            [],
+            as_of=date(2026, 8, 24),
+            earnings=EarningsEvidence(brief=brief, confidence=42),
+        )
+
+        coverage = category_evidence_coverage(context)
+
+        self.assertEqual(coverage["earnings"], 42)
+
+    def test_low_coverage_attenuates_directional_rating_toward_neutral(self) -> None:
+        payload = self.report_payload("neutral")
+        payload["score_categories"]["earnings"]["rating"] = "positive"
+        full_coverage = {category: 100 for category in payload["score_categories"]}
+        low_freshness = {**full_coverage, "earnings": 20}
+
+        full_report = parse_report(json.dumps(payload), "TEST", category_coverage=full_coverage)
+        stale_report = parse_report(json.dumps(payload), "TEST", category_coverage=low_freshness)
+
+        self.assertEqual(full_report.recovery_score, 62)
+        self.assertEqual(stale_report.recovery_score, 52)
+        self.assertLess(stale_report.recovery_score, full_report.recovery_score)
 
     def test_no_sources_produce_zero_evidence_coverage(self) -> None:
         context = build_research_context("TEST", [], [], as_of=date(2026, 8, 24))

@@ -105,6 +105,7 @@ def build_prompt(context: ResearchContext) -> str:
     evidence = json.dumps(context.to_payload(), indent=2)
     return f"""You are a cautious equity research assistant. Analyze {context.ticker} using only the evidence below.
 Do not invent facts, events, prices, sources, or earnings information. If evidence is missing, say so in uncertainties.
+When an `earnings` object is present, its arithmetic, period alignment, sector exceptions, and confidence were calculated deterministically. Use its findings for direction, treat `evidence_confidence_percent` as strength rather than direction, and do not override excluded or non-comparable metrics.
 The `score_categories` value is required. It must be one JSON object (not a list and not a wrapper) with exactly these six keys: market, earnings, news, macro, regulation, and sentiment. Include every required category even when evidence is unavailable; use a neutral rating and say that no relevant evidence was provided.
 Return JSON only, with exactly this shape:
 {{
@@ -127,12 +128,26 @@ Evidence:
 """
 
 
-def confidence_score(assessments: dict[str, CategoryAssessment]) -> int:
-    """Calculate a weighted 0-100 research score from validated ratings."""
+def confidence_score(
+    assessments: dict[str, CategoryAssessment],
+    category_coverage: dict[str, int] | None = None,
+) -> int:
+    """Calculate an evidence-adjusted weighted recovery score.
+
+    When coverage is supplied, each directional rating is pulled toward 50
+    (neutral) in proportion to its evidence coverage. This makes freshness part
+    of earnings contribution without treating age as positive or negative.
+    """
     total_weight = sum(CATEGORY_WEIGHTS[category] for category in assessments)
     if total_weight == 0:
         raise ValueError("At least one category assessment is required to calculate a score.")
-    weighted_total = sum(RATING_VALUES[assessment.rating] * CATEGORY_WEIGHTS[category] for category, assessment in assessments.items())
+    weighted_total = 0.0
+    for category, assessment in assessments.items():
+        rating_value = RATING_VALUES[assessment.rating]
+        if category_coverage is not None:
+            coverage = max(0, min(100, category_coverage.get(category, 0)))
+            rating_value = 50 + (rating_value - 50) * coverage / 100
+        weighted_total += rating_value * CATEGORY_WEIGHTS[category]
     return round(weighted_total / total_weight)
 
 
@@ -154,7 +169,7 @@ def category_evidence_coverage(context: ResearchContext) -> dict[str, int]:
 
     return {
         "market": market_coverage,
-        "earnings": 0,
+        "earnings": context.earnings.confidence if context.earnings and context.earnings.brief else 0,
         "news": news_coverage,
         "macro": 0,
         "regulation": 0,
@@ -343,7 +358,7 @@ def parse_report(
     return ResearchReport(
         ticker.strip().upper(),
         summary.strip(),
-        confidence_score(assessments),
+        confidence_score(assessments, coverage if category_coverage is not None else None),
         evidence_coverage_score(coverage),
         assessments,
         coverage,

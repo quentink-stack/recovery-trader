@@ -47,7 +47,7 @@ The first research data source is the public Google News RSS search feed. `recov
 
 `ResearchService.collect()` combines those articles with recent Alpaca daily bars into a normalized, JSON-serializable `ResearchContext`. This context is the input boundary for the next step: building the structured Ollama prompt and validated research report.
 
-`recovery_trader/research/report.py` builds that prompt and parses the Qwen response into a `ResearchReport`. The report requires market, earnings, news, macro, regulation, and sentiment assessments. Python calculates two separate 0–100 values: a weighted recovery score from those ratings and deterministic evidence coverage from the market/news inputs actually supplied to the model.
+`recovery_trader/research/report.py` builds that prompt and parses the Qwen response into a `ResearchReport`. The report requires market, earnings, news, macro, regulation, and sentiment assessments. Python calculates two separate 0–100 values: an evidence-adjusted recovery score from those ratings and deterministic evidence coverage from the market, news, and compact SEC inputs actually supplied to the model.
 
 The Streamlit app now includes a **Ticker research** section. Enter a symbol and select **Research ticker** to collect recent Alpaca prices and Google News articles, generate a Qwen3 report, and view the recovery score, evidence coverage, category evidence, catalysts, risks, uncertainties, and source links.
 
@@ -86,7 +86,11 @@ timeout_seconds = 30
 
 Alternatively, set `SEC_USER_AGENT` before starting Python. `SEC_TIMEOUT` can override the 30-second request timeout.
 
-When ticker research runs, Recovery Trader fetches SEC filing metadata and 10-Q/10-K facts for preview in the app. The preview also shows the public-release age, a freshness-adjusted earnings-confidence indicator, and an estimated next earnings date based on recent Item 2.02 filing cadence. The estimate is not company-confirmed. These preview measures do not modify raw GAAP values and are not yet supplied to Qwen or used in either top-level score.
+When ticker research runs, Recovery Trader fetches SEC filing metadata and 10-Q/10-K facts for preview in the app. The preview includes prior-year same-period values plus operating income, operating cash flow, capex, debt, and diluted shares. A deterministic brief checks fiscal-period alignment and skips cash-flow/capex/debt direction rules for financial-sector SIC codes. It also shows the public-release age, a freshness-adjusted earnings-confidence indicator, and an estimated next earnings date based on recent Item 2.02 filing cadence. The estimate is not company-confirmed.
+
+**Validate earnings briefs** builds historical briefs from Item 2.02 filing dates and enters on the next trading session, so the simple forward-return test does not assume filing-day availability.
+
+Regular ticker research sends the compact deterministic SEC brief to Qwen as JSON. Python calculates earnings evidence confidence from 40% current-data coverage and 60% comparable-period coverage, then multiplies it by event freshness. That confidence becomes earnings evidence coverage and attenuates the 25%-weighted earnings rating toward neutral; freshness never changes the raw GAAP values or makes the direction positive or negative by itself.
 
 The Streamlit app reads Alpaca Basic market data only; it has no order, account, or position endpoints.
 

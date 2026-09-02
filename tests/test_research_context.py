@@ -3,7 +3,7 @@ from unittest import TestCase
 
 from recovery_trader.domain.market import DailyBar
 from recovery_trader.integrations.news import NewsArticle
-from recovery_trader.integrations.sec_edgar import EarningsFacts, EarningsRelease, SecFiling
+from recovery_trader.integrations.sec_edgar import CompanyProfile, EarningsFacts, EarningsRelease, SecFiling
 from recovery_trader.research.context import build_research_context
 from recovery_trader.research.service import ResearchService
 
@@ -76,7 +76,7 @@ class ResearchContextTests(TestCase):
             ],
         )
 
-    def test_service_collects_sec_preview_without_adding_it_to_qwen_payload(self) -> None:
+    def test_service_adds_compact_sec_brief_to_qwen_payload(self) -> None:
         class FakeMarketData:
             def daily_bars(self, ticker: str, start: date, end: date) -> list[DailyBar]:
                 return []
@@ -92,6 +92,9 @@ class ResearchContextTests(TestCase):
             def filing_history(self, cik: str) -> tuple[SecFiling, ...]:
                 return (SecFiling(cik, "0000320193-26-000010", "8-K", date(2026, 8, 1), None, "filing.htm", "Results", ("2.02",)),)
 
+            def company_profile(self, cik: str) -> CompanyProfile:
+                return CompanyProfile(cik, 3571, "Electronic Computers")
+
             def latest_earnings_facts(self, cik: str) -> EarningsFacts:
                 return EarningsFacts(cik, "10-Q", date(2026, 7, 30), date(2026, 4, 1), date(2026, 6, 30), 2026, "Q2", 95.0, 20.0, 1.25, 1.24, 30.0, "0000320193-26-000010")
 
@@ -105,10 +108,14 @@ class ResearchContextTests(TestCase):
         self.assertEqual(context.earnings.release.exhibit_name, "earnings.htm")  # type: ignore[union-attr]
         self.assertEqual(context.earnings.days_since_release, 23)  # type: ignore[union-attr]
         self.assertEqual(context.earnings.event_freshness, 65)  # type: ignore[union-attr]
-        self.assertEqual(context.earnings.confidence, 65)  # type: ignore[union-attr]
-        self.assertEqual(context.earnings.available_recovery_weight, 16.25)  # type: ignore[union-attr]
+        self.assertEqual(context.earnings.confidence, 26)  # type: ignore[union-attr]
+        self.assertEqual(context.earnings.available_recovery_weight, 6.5)  # type: ignore[union-attr]
         self.assertIsNone(context.earnings.estimated_next_earnings_date)  # type: ignore[union-attr]
-        self.assertNotIn("earnings", context.to_payload())
+        earnings_payload = context.to_payload()["earnings"]
+        self.assertEqual(earnings_payload["source"], "SEC EDGAR structured filing facts")
+        self.assertEqual(earnings_payload["event_freshness_percent"], 65)
+        self.assertEqual(earnings_payload["evidence_confidence_percent"], 26)
+        self.assertEqual(earnings_payload["brief"]["conclusion"], "Insufficient comparable-period evidence")
 
     def test_sec_timing_estimates_next_earnings_from_recent_release_cadence(self) -> None:
         class FakeMarketData:
@@ -132,6 +139,9 @@ class ResearchContextTests(TestCase):
             def filing_history(self, cik: str) -> tuple[SecFiling, ...]:
                 return releases
 
+            def company_profile(self, cik: str) -> CompanyProfile:
+                return CompanyProfile(cik, 3571, "Electronic Computers")
+
             def latest_earnings_facts(self, cik: str) -> EarningsFacts:
                 return EarningsFacts(cik, "10-Q", date(2026, 7, 30), date(2026, 4, 1), date(2026, 6, 30), 2026, "Q2", 95.0, 20.0, 1.25, 1.24, 30.0, "0001-26-3")
 
@@ -144,4 +154,4 @@ class ResearchContextTests(TestCase):
         self.assertEqual(context.earnings.estimated_next_earnings_date, date(2026, 10, 31))
         self.assertEqual(context.earnings.days_until_next_expected_earnings, 68)
         self.assertEqual(context.earnings.raw_data_coverage, 100)
-        self.assertEqual(context.earnings.confidence, 65)
+        self.assertEqual(context.earnings.confidence, 26)

@@ -7,7 +7,8 @@ from datetime import date
 
 from recovery_trader.domain.market import DailyBar
 from recovery_trader.integrations.news import NewsArticle
-from recovery_trader.integrations.sec_edgar import EarningsFacts, EarningsRelease
+from recovery_trader.integrations.sec_edgar import CompanyProfile, EarningsFacts, EarningsRelease
+from recovery_trader.research.earnings import EarningsBrief, brief_to_payload
 
 
 # Keep this aligned with the deterministic category weights in report.py.  The
@@ -30,11 +31,13 @@ class MarketSummary:
 
 @dataclass(frozen=True)
 class EarningsEvidence:
-    """SEC data collected for preview only; it is not yet sent to Qwen."""
+    """SEC data, deterministic interpretation, and freshness metadata."""
 
     cik: str | None = None
     release: EarningsRelease | None = None
     facts: EarningsFacts | None = None
+    profile: CompanyProfile | None = None
+    brief: EarningsBrief | None = None
     error: str | None = None
     public_release_date: date | None = None
     days_since_release: int | None = None
@@ -56,7 +59,7 @@ class ResearchContext:
 
     def to_payload(self) -> dict:
         """Return JSON-serializable evidence for an Ollama prompt."""
-        return {
+        payload = {
             "ticker": self.ticker,
             "as_of": self.as_of,
             "market": asdict(self.market) if self.market else None,
@@ -70,6 +73,24 @@ class ResearchContext:
                 for article in self.news
             ],
         }
+        if self.earnings is not None and self.earnings.brief is not None:
+            payload["earnings"] = {
+                "source": "SEC EDGAR structured filing facts",
+                "industry": self.earnings.profile.sic_description if self.earnings.profile else None,
+                "sic": self.earnings.profile.sic if self.earnings.profile else None,
+                "public_release_date": self.earnings.public_release_date.isoformat() if self.earnings.public_release_date else None,
+                "days_since_release": self.earnings.days_since_release,
+                "event_freshness_percent": self.earnings.event_freshness,
+                "evidence_confidence_percent": self.earnings.confidence,
+                "estimated_next_earnings_date": (
+                    self.earnings.estimated_next_earnings_date.isoformat()
+                    if self.earnings.estimated_next_earnings_date
+                    else None
+                ),
+                "days_until_next_expected_earnings": self.earnings.days_until_next_expected_earnings,
+                "brief": brief_to_payload(self.earnings.brief),
+            }
+        return payload
 
 
 def build_research_context(

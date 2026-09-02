@@ -23,6 +23,17 @@ NET_INCOME_TAGS = ("NetIncomeLoss",)
 EPS_BASIC_TAGS = ("EarningsPerShareBasic",)
 EPS_DILUTED_TAGS = ("EarningsPerShareDiluted",)
 CASH_TAGS = ("CashAndCashEquivalentsAtCarryingValue", "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents")
+OPERATING_INCOME_TAGS = ("OperatingIncomeLoss",)
+OPERATING_CASH_FLOW_TAGS = ("NetCashProvidedByUsedInOperatingActivities",)
+CAPEX_TAGS = (
+    "PaymentsToAcquirePropertyPlantAndEquipment",
+    "PaymentsToAcquireProductiveAssets",
+    "PaymentsForAdditionsToPropertyPlantAndEquipment",
+)
+DEBT_CURRENT_TAGS = ("LongTermDebtCurrent", "ShortTermBorrowings", "ShortTermDebt")
+DEBT_NONCURRENT_TAGS = ("LongTermDebtNoncurrent", "LongTermDebtAndFinanceLeaseObligationsNoncurrent")
+DEBT_TOTAL_TAGS = ("LongTermDebtAndFinanceLeaseObligations", "LongTermDebtAndCapitalLeaseObligations", "LongTermDebt")
+DILUTED_SHARES_TAGS = ("WeightedAverageNumberOfDilutedSharesOutstanding",)
 
 
 class SecEdgarError(RuntimeError):
@@ -63,6 +74,43 @@ class EarningsFacts:
     eps_diluted: float | None
     cash: float | None
     accession_number: str
+    operating_income: float | None = None
+    operating_cash_flow: float | None = None
+    capex: float | None = None
+    debt: float | None = None
+    diluted_shares: float | None = None
+    prior_year: "ComparableEarningsFacts | None" = None
+
+
+@dataclass(frozen=True)
+class ComparableEarningsFacts:
+    """A prior-year 10-Q/10-K period aligned to an EarningsFacts record."""
+
+    form: str
+    filing_date: date
+    period_start: date | None
+    period_end: date
+    fiscal_year: int | None
+    fiscal_period: str | None
+    revenue: float | None
+    operating_income: float | None
+    net_income: float | None
+    eps_diluted: float | None
+    operating_cash_flow: float | None
+    capex: float | None
+    debt: float | None
+    cash: float | None
+    diluted_shares: float | None
+    accession_number: str
+
+
+@dataclass(frozen=True)
+class CompanyProfile:
+    """Minimal SEC classification used only for deterministic metric treatment."""
+
+    cik: str
+    sic: int | None
+    sic_description: str | None
 
 
 @dataclass(frozen=True)
@@ -89,6 +137,8 @@ class SecEdgarClient:
         self.user_agent = user_agent
         self.timeout = timeout
         self._ticker_ciks: dict[str, str] | None = None
+        self._submissions_by_cik: dict[str, dict[str, Any]] = {}
+        self._company_facts_by_cik: dict[str, dict[str, Any]] = {}
 
     @classmethod
     def from_config(cls, config_path: Path | None = None) -> "SecEdgarClient":
@@ -153,7 +203,7 @@ class SecEdgarClient:
     def filing_history(self, cik: str | int) -> tuple[SecFiling, ...]:
         """Return the SEC's recent filing history, newest first."""
         normalized_cik = self._normalize_cik(cik)
-        payload = self._get_json(f"{SEC_SUBMISSIONS_URL}/CIK{normalized_cik}.json")
+        payload = self._submissions(normalized_cik)
         recent = payload.get("filings", {}).get("recent", {})
         if not isinstance(recent, dict):
             raise SecEdgarError("SEC EDGAR submissions response did not contain recent filings.")
@@ -184,6 +234,24 @@ class SecEdgarClient:
                 )
             )
         return tuple(filings)
+
+    def company_profile(self, cik: str | int) -> CompanyProfile:
+        """Return the SEC SIC classification without relying on a vendor sector map."""
+        normalized_cik = self._normalize_cik(cik)
+        payload = self._submissions(normalized_cik)
+        sic = payload.get("sic")
+        return CompanyProfile(
+            normalized_cik,
+            sic if isinstance(sic, int) else int(sic) if isinstance(sic, str) and sic.isdigit() else None,
+            payload.get("sicDescription") if isinstance(payload.get("sicDescription"), str) else None,
+        )
+
+    def _submissions(self, normalized_cik: str) -> dict[str, Any]:
+        if normalized_cik not in self._submissions_by_cik:
+            self._submissions_by_cik[normalized_cik] = self._get_json(
+                f"{SEC_SUBMISSIONS_URL}/CIK{normalized_cik}.json"
+            )
+        return self._submissions_by_cik[normalized_cik]
 
     def latest_earnings_release(self, cik: str | int, filings: Iterable[SecFiling] | None = None) -> EarningsRelease | None:
         """Find the newest Item 2.02 8-K that includes an EX-99.1 exhibit.
@@ -216,27 +284,58 @@ class SecEdgarClient:
     def latest_earnings_facts(self, cik: str | int) -> EarningsFacts | None:
         """Return normalized facts from the newest available 10-Q or 10-K."""
         normalized_cik = self._normalize_cik(cik)
-        payload = self._get_json(f"{SEC_COMPANY_FACTS_URL}/CIK{normalized_cik}.json")
-        all_facts = _collect_facts(payload)
-        anchors = _facts_for_tags(all_facts, REVENUE_TAGS + NET_INCOME_TAGS + EPS_BASIC_TAGS + CASH_TAGS)
-        if not anchors:
-            return None
-        anchor = max(anchors, key=lambda fact: (fact.filed, fact.end, fact.accession_number))
-        return EarningsFacts(
+        return _earnings_facts_from_all(_collect_facts(self._company_facts(normalized_cik)), normalized_cik)
+
+    def earnings_facts_as_of(self, cik: str | int, availability_date: date) -> EarningsFacts | None:
+        """Return only SEC facts that were public by an earnings availability date."""
+        normalized_cik = self._normalize_cik(cik)
+        return _earnings_facts_from_all(
+            _collect_facts(self._company_facts(normalized_cik)),
             normalized_cik,
-            anchor.form,
-            anchor.filed,
-            anchor.start,
-            anchor.end,
-            anchor.fiscal_year,
-            anchor.fiscal_period,
-            _matched_fact_value(all_facts, REVENUE_TAGS, anchor),
-            _matched_fact_value(all_facts, NET_INCOME_TAGS, anchor),
-            _matched_fact_value(all_facts, EPS_BASIC_TAGS, anchor),
-            _matched_fact_value(all_facts, EPS_DILUTED_TAGS, anchor),
-            _matched_fact_value(all_facts, CASH_TAGS, anchor),
-            anchor.accession_number,
+            availability_date,
         )
+
+    def _company_facts(self, normalized_cik: str) -> dict[str, Any]:
+        if normalized_cik not in self._company_facts_by_cik:
+            self._company_facts_by_cik[normalized_cik] = self._get_json(
+                f"{SEC_COMPANY_FACTS_URL}/CIK{normalized_cik}.json"
+            )
+        return self._company_facts_by_cik[normalized_cik]
+
+
+def _earnings_facts_from_all(
+    all_facts: tuple[_XbrlFact, ...],
+    normalized_cik: str,
+    availability_date: date | None = None,
+) -> EarningsFacts | None:
+    anchors = _facts_for_tags(all_facts, REVENUE_TAGS + NET_INCOME_TAGS + EPS_BASIC_TAGS + EPS_DILUTED_TAGS + CASH_TAGS)
+    if availability_date is not None:
+        anchors = tuple(anchor for anchor in anchors if anchor.filed <= availability_date)
+    if not anchors:
+        return None
+    anchor = max(anchors, key=lambda fact: (fact.filed, fact.end, fact.accession_number))
+    prior_year_anchor = _prior_year_anchor(anchors, anchor)
+    return EarningsFacts(
+        normalized_cik,
+        anchor.form,
+        anchor.filed,
+        anchor.start,
+        anchor.end,
+        anchor.fiscal_year,
+        anchor.fiscal_period,
+        _matched_fact_value(all_facts, REVENUE_TAGS, anchor),
+        _matched_fact_value(all_facts, NET_INCOME_TAGS, anchor),
+        _matched_fact_value(all_facts, EPS_BASIC_TAGS, anchor),
+        _matched_fact_value(all_facts, EPS_DILUTED_TAGS, anchor),
+        _matched_fact_value(all_facts, CASH_TAGS, anchor),
+        anchor.accession_number,
+        _matched_fact_value(all_facts, OPERATING_INCOME_TAGS, anchor),
+        _matched_fact_value(all_facts, OPERATING_CASH_FLOW_TAGS, anchor),
+        _matched_fact_value(all_facts, CAPEX_TAGS, anchor),
+        _matched_debt_value(all_facts, anchor),
+        _matched_fact_value(all_facts, DILUTED_SHARES_TAGS, anchor),
+        _comparable_facts(all_facts, prior_year_anchor),
+    )
 
 
 def _at(values: dict[str, Any], key: str, index: int) -> Any:
@@ -309,6 +408,64 @@ def _matched_fact_value(facts: Iterable[_XbrlFact], tags: tuple[str, ...], ancho
         )
     )
     return candidates[0].value
+
+
+def _matched_debt_value(facts: Iterable[_XbrlFact], anchor: _XbrlFact) -> float | None:
+    """Prefer current + noncurrent debt components, then use a reported-total tag."""
+    current = _matched_fact_value(facts, DEBT_CURRENT_TAGS, anchor)
+    noncurrent = _matched_fact_value(facts, DEBT_NONCURRENT_TAGS, anchor)
+    if current is not None and noncurrent is not None:
+        return current + noncurrent
+    return _matched_fact_value(facts, DEBT_TOTAL_TAGS, anchor)
+
+
+def _prior_year_anchor(anchors: Iterable[_XbrlFact], current: _XbrlFact) -> _XbrlFact | None:
+    """Choose a same-form, same-fiscal-period prior-year fact for comparison."""
+    candidates_by_date = [
+        fact
+        for fact in anchors
+        if fact.form == current.form
+        and fact.filed <= current.filed
+        and 330 <= (current.end - fact.end).days <= 400
+    ]
+    if current.fiscal_year is None or not current.fiscal_period:
+        return max(candidates_by_date, key=lambda fact: (fact.filed, fact.end, fact.accession_number), default=None)
+    candidates = [
+        fact
+        for fact in anchors
+        if fact.form == current.form
+        and fact.fiscal_year == current.fiscal_year - 1
+        and fact.fiscal_period == current.fiscal_period
+    ]
+    if candidates:
+        return max(candidates, key=lambda fact: (fact.filed, fact.end, fact.accession_number))
+    # A current filing can include its prior-year comparative period while both
+    # facts retain the current filing's FY field. Fall back to an approximately
+    # one-year period-end gap, still requiring the same form and public date.
+    return max(candidates_by_date, key=lambda fact: (fact.filed, fact.end, fact.accession_number), default=None)
+
+
+def _comparable_facts(facts: Iterable[_XbrlFact], anchor: _XbrlFact | None) -> ComparableEarningsFacts | None:
+    if anchor is None:
+        return None
+    return ComparableEarningsFacts(
+        anchor.form,
+        anchor.filed,
+        anchor.start,
+        anchor.end,
+        anchor.fiscal_year,
+        anchor.fiscal_period,
+        _matched_fact_value(facts, REVENUE_TAGS, anchor),
+        _matched_fact_value(facts, OPERATING_INCOME_TAGS, anchor),
+        _matched_fact_value(facts, NET_INCOME_TAGS, anchor),
+        _matched_fact_value(facts, EPS_DILUTED_TAGS, anchor),
+        _matched_fact_value(facts, OPERATING_CASH_FLOW_TAGS, anchor),
+        _matched_fact_value(facts, CAPEX_TAGS, anchor),
+        _matched_debt_value(facts, anchor),
+        _matched_fact_value(facts, CASH_TAGS, anchor),
+        _matched_fact_value(facts, DILUTED_SHARES_TAGS, anchor),
+        anchor.accession_number,
+    )
 
 
 def _is_exhibit_99_1(item: dict[str, Any], filename: str) -> bool:
