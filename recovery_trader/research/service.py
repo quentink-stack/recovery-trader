@@ -48,6 +48,10 @@ class ResearchService:
         bars = self.market_data.daily_bars(ticker, research_date - timedelta(days=lookback_bars * 2), research_date)
         _report_stage(on_stage, "Fetching recent news")
         articles = self.news_client.recent_articles(ticker, limit=news_limit)
+        article_enricher = getattr(self.news_client, "enrich_articles", None)
+        if callable(article_enricher) and articles:
+            _report_stage(on_stage, "Reading accessible news articles")
+            articles = article_enricher(articles)
         earnings = self._collect_earnings(ticker, research_date, on_stage)
         _report_stage(on_stage, "Preparing evidence")
         return build_research_context(ticker, bars, articles, as_of=research_date, lookback_bars=lookback_bars, earnings=earnings)

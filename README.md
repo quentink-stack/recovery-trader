@@ -43,7 +43,7 @@ $env:OLLAMA_TEMPERATURE = 0.15
 
 The reusable client is in `ollama_client.py`. It provides `is_available()` for a health check and `generate()` for non-streaming model responses. JSON mode is enabled by default for the structured research report planned below.
 
-The first research data source is the public Google News RSS search feed. `recovery_trader/integrations/news.py` returns normalized article titles, publishers, links, and publication timestamps without requiring another API key.
+The first research data source is the public Google News RSS search feed. For each ticker-research request, Recovery Trader resolves Google News wrappers to their publisher URLs, then attempts to extract a readable, bounded excerpt from the first three accessible articles. Each fetch has a 12-second timeout and a 1 MB article-download limit; inaccessible, paywalled, non-HTML, blocked, or unresolved pages remain headline-only without failing research. The Qwen prompt includes the excerpt when available, alongside the title, publisher, and publication timestamp; resolved source links remain clickable in the app but are not sent to Qwen. No additional API key is required.
 
 `ResearchService.collect()` combines those articles with recent Alpaca daily bars into a normalized, JSON-serializable `ResearchContext`. This context is the input boundary for the next step: building the structured Ollama prompt and validated research report.
 
@@ -87,8 +87,6 @@ timeout_seconds = 30
 Alternatively, set `SEC_USER_AGENT` before starting Python. `SEC_TIMEOUT` can override the 30-second request timeout.
 
 When ticker research runs, Recovery Trader fetches SEC filing metadata and 10-Q/10-K facts for preview in the app. The preview includes prior-year same-period values plus operating income, operating cash flow, capex, debt, and diluted shares. A deterministic brief checks fiscal-period alignment and skips cash-flow/capex/debt direction rules for financial-sector SIC codes. It also shows the public-release age, a freshness-adjusted earnings-confidence indicator, and an estimated next earnings date based on recent Item 2.02 filing cadence. The estimate is not company-confirmed.
-
-**Validate earnings briefs** builds historical briefs from Item 2.02 filing dates and enters on the next trading session, so the simple forward-return test does not assume filing-day availability.
 
 Regular ticker research sends the compact deterministic SEC brief to Qwen as JSON. Python calculates earnings evidence confidence from 40% current-data coverage and 60% comparable-period coverage, then multiplies it by event freshness. That confidence becomes earnings evidence coverage and attenuates the 25%-weighted earnings rating toward neutral; freshness never changes the raw GAAP values or makes the direction positive or negative by itself.
 

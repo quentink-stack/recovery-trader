@@ -15,7 +15,13 @@ class ResearchContextTests(TestCase):
             DailyBar(date(2026, 8, 20), 95, 101, 94, 100),
             DailyBar(date(2026, 8, 24), 103, 110, 101, 108),
         ]
-        article = NewsArticle("TEST earnings", "Example News", "https://example.com/test", datetime(2026, 8, 24, 12, tzinfo=timezone.utc))
+        article = NewsArticle(
+            "TEST earnings",
+            "Example News",
+            "https://example.com/test",
+            datetime(2026, 8, 24, 12, tzinfo=timezone.utc),
+            "Revenue grew year over year.",
+        )
 
         context = build_research_context(" test ", bars, [article], as_of=date(2026, 8, 24), lookback_bars=2)
 
@@ -25,6 +31,8 @@ class ResearchContextTests(TestCase):
         self.assertEqual(context.market.bar_count, 2)  # type: ignore[union-attr]
         self.assertAlmostEqual(context.market.return_pct, (108 / 102 - 1) * 100)  # type: ignore[union-attr]
         self.assertEqual(context.to_payload()["news"][0]["published_at"], "2026-08-24T12:00:00+00:00")
+        self.assertEqual(context.to_payload()["news"][0]["excerpt"], "Revenue grew year over year.")
+        self.assertNotIn("url", context.to_payload()["news"][0])
         self.assertNotIn("earnings", context.to_payload())
 
     def test_empty_bars_leave_market_context_empty(self) -> None:
@@ -75,6 +83,27 @@ class ResearchContextTests(TestCase):
                 "Preparing evidence",
             ],
         )
+
+    def test_service_enriches_news_before_building_qwen_context(self) -> None:
+        class FakeMarketData:
+            def daily_bars(self, ticker: str, start: date, end: date) -> list[DailyBar]:
+                return []
+
+        class FakeNewsClient:
+            def recent_articles(self, ticker: str, limit: int) -> list[NewsArticle]:
+                return [NewsArticle("TEST update", "Example", "https://example.com", None)]
+
+            def enrich_articles(self, articles: list[NewsArticle]) -> list[NewsArticle]:
+                article = articles[0]
+                return [NewsArticle(article.title, article.publisher, article.url, article.published_at, "Article detail.")]
+
+        stages: list[str] = []
+        context = ResearchService(FakeMarketData(), FakeNewsClient()).collect(  # type: ignore[arg-type]
+            "TEST", as_of=date(2026, 8, 24), on_stage=stages.append
+        )
+
+        self.assertEqual(context.to_payload()["news"][0]["excerpt"], "Article detail.")
+        self.assertIn("Reading accessible news articles", stages)
 
     def test_service_adds_compact_sec_brief_to_qwen_payload(self) -> None:
         class FakeMarketData:

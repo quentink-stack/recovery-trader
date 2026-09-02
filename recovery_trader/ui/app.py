@@ -17,7 +17,6 @@ from recovery_trader.integrations.ollama import OllamaClient
 from recovery_trader.integrations.sec_edgar import EarningsFacts, SecEdgarClient
 from recovery_trader.domain.screener import latest_large_drop, load_watchlist
 from recovery_trader.research.context import EarningsEvidence, ResearchContext
-from recovery_trader.research.earnings_backtest import EarningsBriefBacktest, backtest_earnings_briefs
 from recovery_trader.research.report import CATEGORY_WEIGHTS, ResearchReport, generate_report
 from recovery_trader.research.service import ResearchService
 
@@ -142,24 +141,6 @@ def research_service() -> ResearchService:
 def load_daily_bars(tickers: tuple[str, ...], start: date, end: date, data_version: str) -> dict[str, list]:
     """Load a versioned data set; data_version is part of the Streamlit cache key."""
     return client().daily_bars_for_symbols(tickers, start, end)
-
-
-def validate_earnings_briefs(
-    ticker: str,
-    start: date,
-    end: date,
-    hold_sessions: int,
-) -> tuple[tuple, EarningsBriefBacktest]:
-    """Run an availability-date-safe validation without involving Qwen.
-
-    SEC responses are already retained by the cached client resource; keeping
-    rich evidence objects out of Streamlit's pickle cache avoids serialization
-    failures during a validation run.
-    """
-    service = research_service()
-    briefs = service.historical_earnings_briefs(ticker, start, end)
-    bars = client().daily_bars(ticker, start, end)
-    return briefs, backtest_earnings_briefs(briefs, bars, hold_sessions=hold_sessions)
 
 
 def user_error(exc: Exception) -> str:
@@ -395,51 +376,6 @@ def display_qwen_evidence_preview(context: ResearchContext) -> None:
         st.json(context.to_payload(), expanded=False)
 
 
-def earnings_validation_section() -> None:
-    st.header("Validate earnings briefs")
-    st.caption("Uses Item 2.02 filing dates as public availability, enters at the following session's open, and never uses same-day information.")
-    with st.form("earnings_brief_validation"):
-        ticker = st.text_input("Ticker for validation", placeholder="e.g. AAPL").strip().upper()
-        hold_sessions = st.slider("Forward holding period", min_value=1, max_value=60, value=10)
-        submitted = st.form_submit_button("Run point-in-time validation")
-    if not submitted:
-        return
-    if not ticker:
-        st.warning("Enter a ticker symbol first.")
-        return
-    end = date.today()
-    start = end - timedelta(days=365 * 3)
-    try:
-        with st.spinner("Collecting historical SEC availability dates and Alpaca bars…"):
-            briefs, result = validate_earnings_briefs(ticker, start, end, hold_sessions)
-    except Exception as exc:
-        st.error(user_error(exc))
-        return
-    st.caption(f"{len(briefs)} SEC briefs considered from {start.isoformat()} through {end.isoformat()}.")
-    metric_column, return_column = st.columns(2)
-    with metric_column:
-        st.metric("Constructive brief trades", len(result.trades))
-    with return_column:
-        st.metric("Average forward return", f"{result.average_return:.2f}%")
-    if result.trades:
-        st.dataframe(
-            pd.DataFrame(
-                {
-                    "Availability date": trade.availability_date,
-                    "Entry date": trade.entry_day,
-                    "Exit date": trade.exit_day,
-                    "Return": trade.return_pct,
-                    "Conclusion": trade.conclusion,
-                }
-                for trade in result.trades
-            ),
-            hide_index=True,
-            column_config={"Return": st.column_config.NumberColumn(format="%.2f%%")},
-        )
-    else:
-        st.info("No constructive, period-aligned earnings briefs had a following trading session in this window.")
-
-
 def _format_days_until(days: int | None) -> str:
     if days is None:
         return "Unavailable"
@@ -450,7 +386,7 @@ def _format_days_until(days: int | None) -> str:
 
 def ticker_research_section() -> None:
     st.header("Ticker research")
-    st.caption("Combines recent market data and news, then asks the local Qwen3 model for a structured, evidence-grounded assessment.")
+    st.caption("Combines recent market data, SEC evidence, and bounded readable news excerpts, then asks the local Qwen3 model for a structured, evidence-grounded assessment.")
     ticker = st.text_input("Ticker to research", placeholder="e.g. AAPL").strip().upper()
     research_requested = st.button("Research ticker", type="primary")
     saved_status = st.session_state.get("ticker_research_status")
@@ -508,7 +444,8 @@ def ticker_research_section() -> None:
             if context.news:
                 for article in context.news:
                     published = article.published_at.date().isoformat() if article.published_at else "date unavailable"
-                    st.markdown(f"- [{article.title}]({article.url}) · {article.publisher} · {published}")
+                    reading_status = "excerpt read by Qwen" if article.excerpt else "headline only"
+                    st.markdown(f"- [{article.title}]({article.url}) · {article.publisher} · {published} · {reading_status}")
             else:
                 st.caption("No recent news articles were returned.")
         st.caption("Research output is informational only and is not investment advice.")
@@ -519,8 +456,6 @@ def ticker_research_section() -> None:
 
 def main() -> None:
     min_drop = configure_sidebar()
-    earnings_validation_section()
-    st.divider()
     ticker_research_section()
     st.divider()
     page = st.navigation([st.Page(lambda: screen_page(min_drop), title="Drop screener", icon="📉", url_path="screener", default=True)])

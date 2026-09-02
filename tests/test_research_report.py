@@ -65,7 +65,7 @@ class ResearchReportTests(TestCase):
         report = generate_report(self.context, client, on_stage=stages.append)
 
         self.assertEqual(report.recovery_score, 50)
-        self.assertEqual(report.evidence_coverage, 8)
+        self.assertEqual(report.evidence_coverage, 6)
         client.generate.assert_called_once()
         self.assertTrue(client.generate.call_args.kwargs["json_response"])
         self.assertEqual(client.generate.call_args.kwargs["response_schema"], REPORT_RESPONSE_SCHEMA)
@@ -82,6 +82,7 @@ class ResearchReportTests(TestCase):
                 ("Publisher A", "Publisher B", "Publisher C")[index % 3],
                 f"https://example.com/{index}",
                 datetime(2026, 8, 20 + index, tzinfo=timezone.utc),
+                "Accessible article excerpt." if index < 3 else None,
             )
             for index in range(5)
         ]

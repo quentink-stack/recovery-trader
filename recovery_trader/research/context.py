@@ -67,8 +67,8 @@ class ResearchContext:
                 {
                     "title": article.title,
                     "publisher": article.publisher,
-                    "url": article.url,
                     "published_at": article.published_at.isoformat() if article.published_at else None,
+                    "excerpt": article.excerpt,
                 }
                 for article in self.news
             ],

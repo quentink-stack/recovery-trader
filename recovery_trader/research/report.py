@@ -6,6 +6,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from recovery_trader.integrations.news import ARTICLE_EXCERPT_LIMIT
 from recovery_trader.integrations.ollama import OllamaClient
 from recovery_trader.research.context import ResearchContext
 
@@ -106,6 +107,7 @@ def build_prompt(context: ResearchContext) -> str:
     return f"""You are a cautious equity research assistant. Analyze {context.ticker} using only the evidence below.
 Do not invent facts, events, prices, sources, or earnings information. If evidence is missing, say so in uncertainties.
 When an `earnings` object is present, its arithmetic, period alignment, sector exceptions, and confidence were calculated deterministically. Use its findings for direction, treat `evidence_confidence_percent` as strength rather than direction, and do not override excluded or non-comparable metrics.
+News records may include a bounded `excerpt` extracted from the linked public article. Treat excerpts as stronger evidence than headlines, but do not infer facts from a headline-only record or claim to have read an article whose excerpt is null.
 The `score_categories` value is required. It must be one JSON object (not a list and not a wrapper) with exactly these six keys: market, earnings, news, macro, regulation, and sentiment. Include every required category even when evidence is unavailable; use a neutral rating and say that no relevant evidence was provided.
 Return JSON only, with exactly this shape:
 {{
@@ -162,10 +164,12 @@ def category_evidence_coverage(context: ResearchContext) -> dict[str, int]:
         article_count = len(context.news)
         distinct_publishers = len({article.publisher.strip().lower() for article in context.news if article.publisher.strip()})
         dated_articles = sum(article.published_at is not None for article in context.news)
-        article_points = min(article_count / 5, 1) * 50
-        publisher_points = min(distinct_publishers / 3, 1) * 25
-        date_points = dated_articles / article_count * 25
-        news_coverage = round(article_points + publisher_points + date_points)
+        excerpt_count = sum(bool(article.excerpt) for article in context.news)
+        article_points = min(article_count / 5, 1) * 35
+        publisher_points = min(distinct_publishers / 3, 1) * 20
+        date_points = dated_articles / article_count * 10
+        excerpt_points = min(excerpt_count / min(article_count, ARTICLE_EXCERPT_LIMIT), 1) * 35
+        news_coverage = round(article_points + publisher_points + date_points + excerpt_points)
 
     return {
         "market": market_coverage,
