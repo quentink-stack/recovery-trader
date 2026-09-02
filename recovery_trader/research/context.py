@@ -75,9 +75,7 @@ class ResearchContext:
         }
         if self.earnings is not None and self.earnings.brief is not None:
             payload["earnings"] = {
-                "source": "SEC EDGAR structured filing facts",
                 "industry": self.earnings.profile.sic_description if self.earnings.profile else None,
-                "sic": self.earnings.profile.sic if self.earnings.profile else None,
                 "public_release_date": self.earnings.public_release_date.isoformat() if self.earnings.public_release_date else None,
                 "days_since_release": self.earnings.days_since_release,
                 "event_freshness_percent": self.earnings.event_freshness,

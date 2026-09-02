@@ -141,7 +141,8 @@ class ResearchContextTests(TestCase):
         self.assertEqual(context.earnings.available_recovery_weight, 6.5)  # type: ignore[union-attr]
         self.assertIsNone(context.earnings.estimated_next_earnings_date)  # type: ignore[union-attr]
         earnings_payload = context.to_payload()["earnings"]
-        self.assertEqual(earnings_payload["source"], "SEC EDGAR structured filing facts")
+        self.assertNotIn("source", earnings_payload)
+        self.assertNotIn("sic", earnings_payload)
         self.assertEqual(earnings_payload["event_freshness_percent"], 65)
         self.assertEqual(earnings_payload["evidence_confidence_percent"], 26)
         self.assertEqual(earnings_payload["brief"]["conclusion"], "Insufficient comparable-period evidence")
