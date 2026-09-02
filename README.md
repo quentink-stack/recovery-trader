@@ -1,6 +1,6 @@
 # Recovery Trader
 
-A local research screener and strategy lab for sharp single-day equity declines.
+A local research screener for sharp single-day equity declines.
 
 
 ## Local Ollama
@@ -92,6 +92,6 @@ Regular ticker research sends the compact deterministic SEC brief to Qwen as JSO
 
 The Streamlit app reads Alpaca Basic market data only; it has no order, account, or position endpoints.
 
-- **Run dip-recovery backtest** downloads two years of daily bars for a ticker and tests a simple proxy: a qualifying drop from one session's close to the next session's close, entry at the following open, a 15-trading-day maximum hold, 10% stop, and 12% target.
+The S&P 500 screener identifies a qualifying decline from day 1's close to day 2's close. It then shows day 3's opening price as the earliest modeled entry, plus the first closing prices on or after one week and 30 calendar days after the signal. The 30-day percentage change is measured from the day-2 signal close to that 30-day closing-price checkpoint. These are research observations, not simulated trades or exit results.
 
-The backtest measures underlying-price returns and avoids using the signal day's closing price as an entry. Alpaca Basic's IEX data is suitable for development and hypothesis testing—not execution-quality pricing.
+The currently exposed Streamlit interface does not include a backtest control. Alpaca Basic's IEX data is suitable for development and hypothesis testing—not execution-quality pricing.
