@@ -2,6 +2,15 @@
 
 A local research screener for sharp single-day equity declines.
 
+## Saved research and results
+
+Start at [research/README.md](research/README.md) for the current findings, dated
+experiment records, preserved aggregate CSVs, reproduction steps, and pending
+research. These files are intended for Git; raw exports and credentials remain
+ignored. The research index explains how to save future experiments and back up
+the raw data separately. Root `AGENTS.md` directs future coding sessions to read
+this record before changing research logic.
+
 
 ## Local Ollama
 
@@ -61,7 +70,74 @@ Refresh the local constituent list deliberately when needed:
 python refresh_sp500.py
 ```
 
-The refresh script reads the constituent table from Wikipedia and writes the resulting symbol and company list into `data/sp500.csv`. Review the generated change before committing it; index membership changes over time.
+The refresh script reads the constituent table from Wikipedia and writes each symbol, company, and GICS sector into `data/sp500.csv`. Review the generated change before committing it; index membership and sector classifications change over time.
+
+## Market feature test lab
+
+To export the analysis without opening Streamlit, run:
+
+```powershell
+python export_market_analysis.py --days 730 --min-drop 5
+```
+
+This uses all constituents in the saved universe and your existing `config/alpaca.ini` credentials.
+For a smaller run, add `--per-sector 10` or `--tickers CSCO,JPM,XOM`.
+Each run creates a new ignored `exports/market-analysis-.../` directory with `events.csv`,
+`daily_bars.csv`, `universe_coverage.csv`, and `metadata.json`. Share `events.csv` and
+`metadata.json` for analysis; raw bars allow independent calculation checks. The export
+excludes the current day and contains no API credentials. Use `--as-of YYYY-MM-DD`
+for a historical exclusive cutoff. The chronological split reproduces the lab but does
+not purge overlapping forward windows, so treat comparisons as exploratory.
+
+The **Market feature lab** page tests deterministic price features without calling SEC, news, Ollama, or Qwen. Choose a historical window, GICS sectors, and a bounded per-sector sample. The lab finds every qualifying close-to-close drop with a following day-3 entry session and compares five values: the raw drop, excess drop versus SPY, drop magnitude versus prior 20-session volatility, overnight gap, and signal-day intraday return.
+
+Historical outcomes use the day-3 open as entry and report 5-, 10-, 20-, and 30-trading-session returns, counting the entry session as session 1. The lab also measures close-based recovery to the pre-drop price, sessions to recovery, and complete-window maximum drawdown and favorable movement. Unknown future windows remain incomplete rather than being counted as failures. Sector summaries and fixed feature ranges exclude missing horizons, while complete outcomes are split chronologically into an older 70% discovery sample and a recent 30% holdout sample.
+
+Results include sector comparisons, feature-range comparisons, individual event rows, and CSV export. An extra 60 calendar days are fetched before the selected window so early events can calculate their pre-signal volatility without lookahead. Alpaca results use the same 15-minute cache as the screener.
+
+### Offline return-consistency analysis
+
+Analyze an existing export without new Alpaca requests or Qwen calls:
+
+```powershell
+python analyze_market_consistency.py exports/market-analysis-20260909-152502-884305
+```
+
+Replace the directory with your export. A new ignored `exports/consistency-.../`
+directory contains `summary.csv`, `by_quarter.csv`, `by_sector.csv`, individual
+`trades.csv`, and methodology/source hashes in `metadata.json`. `--output` may
+specify a different **new** directory; existing results are never overwritten.
+
+This experiment compares five fixed exits: 20-session hold, 30-session hold,
+close-based recovery to the pre-drop close (30-session cap), that recovery exit
+with a 10% close-based stop, and a 10% closing-price trailing stop (30-session cap).
+Recovery/stop conditions are observed at the close and filled at the **next open**,
+including gaps; these are not intraday stops or guaranteed loss limits. A trailing
+stop uses the highest observed close or entry price, not intraday highs. Entry is
+still day 3's open and counts as session 1. This does not change the app's other
+strategy implementations or Qwen scoring.
+
+Every exit uses the same complete 30-session sample. The earliest eligible entry
+per ticker blocks further entries for its entire 30-session window, even if an
+exit occurs sooner. Older windows reaching the recent-period boundary are purged
+first. The second entry-filter comparison retains events with a drop between 2
+and 5 times prior daily volatility (2 inclusive, 5 exclusive), applied after this
+common cohort selection. No threshold optimization is performed.
+
+Reports include median **and mean** returns, win rates, 10th-percentile losses,
+worst losses, matched-date/open-or-close SPY excess returns, date-balanced medians,
+and sensitivity to excluding the three largest signal-date clusters. Costs are
+tested at 0, 10, and 25 basis points **per side**, applied to stock and benchmark.
+Quarter/sector breadth counts only groups with at least 30 trades; quarters may
+be partial. `adverse_excursion_pct` is the worst exposed price versus entry, not
+peak-to-trough portfolio drawdown.
+
+The older/recent split is a robustness check, **not an untouched holdout** once
+you have reviewed this dataset. Cross-ticker correlation, current-constituent
+survivorship bias, and IEX pricing limitations remain. These are per-trade stock
+results, not a capital-constrained portfolio, earnings-only study, or options
+backtest. Higher win rates or medians can come at the expense of mean returns;
+require new, unseen data before treating an apparent improvement as established.
 
 ## Alpaca Basic research mode
 

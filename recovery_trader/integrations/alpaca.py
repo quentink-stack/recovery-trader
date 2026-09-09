@@ -42,7 +42,16 @@ class AlpacaMarketData:
 
     @staticmethod
     def _parse_bar(item: dict) -> DailyBar:
-        return DailyBar(datetime.fromisoformat(item["t"].replace("Z", "+00:00")).date(), float(item["o"]), float(item["h"]), float(item["l"]), float(item["c"]))
+        return DailyBar(
+            datetime.fromisoformat(item["t"].replace("Z", "+00:00")).date(),
+            float(item["o"]),
+            float(item["h"]),
+            float(item["l"]),
+            float(item["c"]),
+            float(item["v"]) if item.get("v") is not None else None,
+            int(item["n"]) if item.get("n") is not None else None,
+            float(item["vw"]) if item.get("vw") is not None else None,
+        )
 
     def daily_bars(self, ticker: str, start: date, end: date) -> list[DailyBar]:
         data = self._get_json(f"/v2/stocks/{ticker.upper()}/bars", {"timeframe": "1Day", "start": start.isoformat(), "end": end.isoformat(), "adjustment": "all", "feed": self.equities_feed, "limit": 10000})

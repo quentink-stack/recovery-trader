@@ -1,0 +1,52 @@
+{
+  "source_directory": "exports/market-analysis-20260909-152502-884305",
+  "recent_signal_start": "2026-01-15",
+  "input_events": 4471,
+  "incomplete": 282,
+  "purged_boundary": 136,
+  "overlapping": 2033,
+  "benchmark_gaps": 0,
+  "retained_events": 2020,
+  "source_feed": "iex",
+  "minimum_drop_pct": 5,
+  "source_hashes": {
+    "events.csv": "4daa3e2ab254aded4a4fbeaa8e238f47a23d6dd60956086b5d0270a0c556e531",
+    "daily_bars.csv": "78cc73c37375c078e5f7ed8ee3808ea13c8e617c730f1d34515c7ae16292e5fc",
+    "metadata.json": "10f619f590d1bcaa42718f63f4a3414f1483efed3ff1f4dca0bd651ea5173186"
+  },
+  "policies": [
+    "hold_20",
+    "hold_30",
+    "recovery_30",
+    "recovery_stop_10",
+    "trailing_close_10"
+  ],
+  "entry_filters": [
+    "all_drops",
+    "volatility_2_to_5"
+  ],
+  "cost_bps_per_side": [
+    0,
+    10,
+    25
+  ],
+  "method": [
+    "All policies use one common full-30-session cohort; earliest entry retained per ticker, then block 30 sessions.",
+    "Older/recent split at 70% of unique complete signal dates; older full windows reaching the boundary are purged before non-overlap selection.",
+    "Moderate-volatility filter is 2 <= drop/prior volatility < 5, applied AFTER cohort selection; no threshold search.",
+    "Recovery: close >= pre-drop close; stop: close <= 90% of entry; trailing: close <= 90% of highest observed close or entry.",
+    "Conditional exits fill NEXT open, including gaps; fixed exits use session-20/30 close. Entry session counts as 1.",
+    "SPY uses exactly the same entry open and exit date/open-or-close. Both legs receive identical cost assumptions; mismatched session calendars are excluded.",
+    "Date-balanced median is median of per-signal-date medians; it is not a portfolio return.",
+    "Quarter/sector breadth only counts groups with >=30 trades; quarter groups may be partial."
+  ],
+  "limitations": [
+    "Exploratory: the source data has already been inspected. The recent period is NOT an untouched holdout.",
+    "No earnings-event confirmation. Current index membership/sector labels introduce survivorship bias.",
+    "Different tickers and dates can remain correlated. No independence assumption, significance claims, or fitted ranking.",
+    "Not a capital-constrained portfolio; no compounded return, CAGR, or Sharpe. Idle cash after early exits is not modeled.",
+    "Adjusted IEX daily bars are approximate research prices, not executable consolidated prices. Observed bars count as sessions.",
+    "Stock returns only: no option premiums, implied volatility, spreads, theta, or taxes.",
+    "Close-based stops are not hard intraday loss limits. Adverse excursion is worst price vs entry, not portfolio drawdown."
+  ]
+}

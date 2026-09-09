@@ -26,6 +26,7 @@ venv/
 htmlcov/
 
 # Local research outputs and downloaded market data.
+COMMIT_MESSAGE.txt
 exports/
 backtest-results/
 data/cache/

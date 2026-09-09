@@ -17,12 +17,18 @@ from recovery_trader.integrations.ollama import OllamaClient
 from recovery_trader.integrations.sec_edgar import EarningsFacts, SecEdgarClient
 from recovery_trader.domain.screener import latest_large_drop, load_watchlist
 from recovery_trader.research.context import EarningsEvidence, ResearchContext
+from recovery_trader.research.market_feature_lab import (
+    build_market_feature_observations,
+    chronological_evaluation_periods,
+    select_sector_sample,
+)
 from recovery_trader.research.report import CATEGORY_WEIGHTS, ResearchReport, generate_report
 from recovery_trader.research.service import ResearchService
 
 ROOT = Path(__file__).parents[2]
 SP500 = ROOT / "data" / "sp500.csv"
 SCREEN_DATA_VERSION = "day-two-signal-v1"
+MARKET_FEATURE_LAB_VERSION = "market-feature-outcomes-v2"
 
 
 def format_elapsed(seconds: float) -> str:
@@ -210,6 +216,288 @@ def screen_page(min_drop: float) -> None:
         st.info("No S&P 500 ticker had a qualifying drop in that lookback window.")
 
 
+def _assign_evaluation_period(frame: pd.DataFrame) -> pd.DataFrame:
+    """Split complete outcomes chronologically while retaining recent unknowns."""
+    result = frame.copy()
+    result["Evaluation period"] = chronological_evaluation_periods(
+        result["Signal date"].tolist(),
+        result["30-session complete"].tolist(),
+    )
+    return result
+
+
+def _outcome_summary(frame: pd.DataFrame, group_columns: list[str]) -> pd.DataFrame:
+    """Summarize comparable outcomes while excluding missing horizons."""
+    rows: list[dict[str, Any]] = []
+    grouper: str | list[str] = group_columns[0] if len(group_columns) == 1 else group_columns
+    for group_key, group in frame.groupby(grouper, observed=True, sort=False):
+        keys = (group_key,) if len(group_columns) == 1 else group_key
+        complete = group[group["30-session complete"]]
+        row = dict(zip(group_columns, keys))
+        row.update(
+            {
+                "Events": len(group),
+                "Complete 30-session events": len(complete),
+                "Recovery rate": (
+                    complete["Recovered prior close"].astype(float).mean() * 100 if not complete.empty else None
+                ),
+                "Median 20-session return": group["20-session return"].median(),
+                "Median 30-session return": complete["30-session return"].median(),
+                "Median maximum drawdown": complete["30-session maximum drawdown"].median(),
+                "Median maximum favorable move": complete["30-session maximum favorable move"].median(),
+                "Median sessions to recovery": complete.loc[
+                    complete["Recovered prior close"].eq(True), "Sessions to recovery"
+                ].median(),
+                "Sample note": "Reviewable" if len(complete) >= 30 else "Small sample (<30 complete)",
+            }
+        )
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def _feature_bucket_summary(frame: pd.DataFrame) -> pd.DataFrame:
+    """Compare fixed, interpretable feature ranges in discovery and holdout data."""
+    complete = frame[frame["30-session complete"]].copy()
+    if complete.empty:
+        return pd.DataFrame()
+    complete["Excess-drop bucket"] = pd.cut(
+        complete["Excess drop vs SPY"],
+        bins=[float("-inf"), -10, -7.5, -5, float("inf")],
+        labels=["≤ -10%", "-10% to -7.5%", "-7.5% to -5%", "> -5%"],
+    )
+    complete["Volatility bucket"] = pd.cut(
+        complete["Drop / prior volatility"],
+        bins=[float("-inf"), 2, 3, 5, float("inf")],
+        labels=["< 2×", "2× to 3×", "3× to 5×", "≥ 5×"],
+        right=False,
+    )
+    complete["Drop decomposition"] = complete.apply(
+        lambda row: (
+            "Overnight-led"
+            if abs(row["Overnight gap"]) >= abs(row["Intraday return"])
+            else "Intraday-led"
+        ),
+        axis=1,
+    )
+    summaries: list[pd.DataFrame] = []
+    for label, bucket_column in (
+        ("Excess drop vs SPY", "Excess-drop bucket"),
+        ("Drop / prior volatility", "Volatility bucket"),
+        ("Drop decomposition", "Drop decomposition"),
+    ):
+        eligible = complete.dropna(subset=[bucket_column])
+        if eligible.empty:
+            continue
+        summary = _outcome_summary(eligible, ["Evaluation period", bucket_column])
+        summary.insert(1, "Feature test", label)
+        summary = summary.rename(columns={bucket_column: "Feature range"})
+        summaries.append(summary)
+    return pd.concat(summaries, ignore_index=True) if summaries else pd.DataFrame()
+
+
+OUTCOME_COLUMN_CONFIG = {
+    "Recovery rate": st.column_config.NumberColumn(format="%.1f%%"),
+    "Median 20-session return": st.column_config.NumberColumn(format="%.2f%%"),
+    "Median 30-session return": st.column_config.NumberColumn(format="%.2f%%"),
+    "Median maximum drawdown": st.column_config.NumberColumn(format="%.2f%%"),
+    "Median maximum favorable move": st.column_config.NumberColumn(format="%.2f%%"),
+    "Median sessions to recovery": st.column_config.NumberColumn(format="%.1f"),
+}
+
+
+def market_feature_lab_page(min_drop: float) -> None:
+    """Compare deterministic market features across historical sector events."""
+    st.title("Market feature test lab")
+    st.caption(
+        "Runs only deterministic Alpaca calculations—no SEC requests, news downloads, Ollama, Qwen, or score changes. "
+        "Every qualifying event requires a following day-3 entry session. Forward horizons count that entry session as session 1."
+    )
+    try:
+        constituents = load_watchlist(SP500)
+    except Exception as exc:
+        st.error(str(exc))
+        return
+    sectors = sorted({item.sector for item in constituents if item.sector})
+    if not sectors:
+        st.error("The S&P 500 file has no sector labels. Run `python refresh_sp500.py`, then reload this page.")
+        return
+
+    with st.form("market_feature_lab_controls"):
+        lookback_days = st.select_slider(
+            "Event lookback",
+            options=[90, 180, 252, 365, 730],
+            value=365,
+            format_func=lambda value: f"{value} calendar days",
+        )
+        selected_sectors = st.multiselect("GICS sectors", sectors, default=sectors)
+        sample_size = st.selectbox(
+            "Constituents per sector",
+            options=[5, 10, 25, "All"],
+            index=1,
+            help="A stable sample keeps Alpaca downloads small. Choose All for the complete selected sectors.",
+        )
+        submitted = st.form_submit_button("Run market feature test", type="primary")
+
+    st.caption(
+        f"Current event threshold: {min_drop:.1f}% close-to-close decline from the sidebar. "
+        "Alpaca responses are cached for 15 minutes."
+    )
+
+    if submitted:
+        if not selected_sectors:
+            st.warning("Select at least one sector.")
+        else:
+            per_sector = None if sample_size == "All" else int(sample_size)
+            selected = select_sector_sample(constituents, set(selected_sectors), per_sector)
+            today = date.today()
+            signal_start = today - timedelta(days=lookback_days)
+            # The extra history supplies 20 pre-signal returns for events near
+            # the beginning of the requested test window.
+            fetch_start = signal_start - timedelta(days=60)
+            symbols = tuple(dict.fromkeys([*(item.ticker for item in selected), "SPY"]))
+            progress = st.progress(5, text=f"Loading {len(selected)} sampled constituents plus SPY…")
+            try:
+                bars_by_ticker = load_daily_bars(
+                    symbols,
+                    fetch_start,
+                    today,
+                    MARKET_FEATURE_LAB_VERSION,
+                )
+                progress.progress(70, text="Calculating every qualifying point-in-time event…")
+                observations = build_market_feature_observations(
+                    selected,
+                    bars_by_ticker,
+                    bars_by_ticker.get("SPY", []),
+                    min_drop,
+                    signal_start,
+                )
+                frame = pd.DataFrame(
+                    {
+                        "Ticker": item.ticker,
+                        "Company": item.company,
+                        "Sector": item.sector,
+                        "Signal date": item.signal_day,
+                        "Entry date": item.entry_day,
+                        "Prior close": item.prior_close,
+                        "Entry open": item.entry_open,
+                        "Close-to-close drop": item.close_to_close_drop_pct,
+                        "Excess drop vs SPY": item.excess_drop_vs_spy_pct,
+                        "Drop / prior volatility": item.drop_volatility_multiple,
+                        "Overnight gap": item.overnight_gap_pct,
+                        "Intraday return": item.intraday_return_pct,
+                        "5-session return": item.return_5_sessions_pct,
+                        "10-session return": item.return_10_sessions_pct,
+                        "20-session return": item.return_20_sessions_pct,
+                        "30-session return": item.return_30_sessions_pct,
+                        "Recovered prior close": item.recovered_prior_close_30_sessions,
+                        "Sessions to recovery": item.sessions_to_recovery,
+                        "30-session maximum drawdown": item.max_drawdown_30_sessions_pct,
+                        "30-session maximum favorable move": item.max_favorable_30_sessions_pct,
+                        "30-session complete": item.complete_30_sessions,
+                    }
+                    for item in observations
+                )
+                if not frame.empty:
+                    frame = _assign_evaluation_period(frame)
+                progress.progress(100, text="Market feature test complete.")
+                progress.empty()
+                st.session_state["market_feature_lab_results"] = frame
+                st.session_state["market_feature_lab_scope"] = {
+                    "version": MARKET_FEATURE_LAB_VERSION,
+                    "symbols": len(selected),
+                    "lookback_days": lookback_days,
+                    "minimum_drop_pct": min_drop,
+                }
+            except Exception as exc:
+                progress.empty()
+                st.error(user_error(exc))
+
+    frame = st.session_state.get("market_feature_lab_results")
+    scope = st.session_state.get("market_feature_lab_scope")
+    if not isinstance(frame, pd.DataFrame) or not isinstance(scope, dict):
+        return
+    if scope.get("version") != MARKET_FEATURE_LAB_VERSION:
+        st.session_state.pop("market_feature_lab_results", None)
+        st.session_state.pop("market_feature_lab_scope", None)
+        st.info("Saved lab results use an older format. Run the market feature test again.")
+        return
+    if scope.get("minimum_drop_pct") != min_drop:
+        st.info(
+            f"Displayed results use a {scope.get('minimum_drop_pct'):.1f}% threshold. "
+            f"Run the test again to apply the current {min_drop:.1f}% sidebar threshold."
+        )
+    if frame.empty:
+        st.info("No qualifying events were found for the selected sectors, sample, threshold, and lookback.")
+        return
+
+    event_count = len(frame)
+    ticker_count = frame["Ticker"].nunique()
+    sector_count = frame["Sector"].nunique()
+    complete_count = frame["30-session complete"].sum()
+    metric_columns = st.columns(4)
+    metric_columns[0].metric("Qualifying events", event_count)
+    metric_columns[1].metric("Tickers with events", ticker_count)
+    metric_columns[2].metric("Sectors represented", sector_count)
+    metric_columns[3].metric("Complete 30-session outcomes", f"{complete_count}/{event_count}")
+
+    st.subheader("Outcome comparison by sector")
+    st.caption(
+        "Recovery rate and 30-session statistics use complete 30-session windows only. "
+        "The 20-session median includes every event with that horizon available."
+    )
+    sector_summary = _outcome_summary(frame, ["Sector"]).sort_values("Events", ascending=False)
+    st.dataframe(sector_summary, hide_index=True, column_config=OUTCOME_COLUMN_CONFIG, width="stretch")
+
+    st.subheader("Feature ranges: discovery vs holdout")
+    st.caption(
+        "Complete outcomes are split chronologically: the older 70% is for discovering patterns and the recent 30% "
+        "is the holdout. Events sharing a signal date stay together, and fixed feature ranges avoid choosing cutoffs "
+        "after seeing returns."
+    )
+    feature_summary = _feature_bucket_summary(frame)
+    if feature_summary.empty:
+        st.info("No complete 30-session outcomes are available for feature-range comparison yet.")
+    else:
+        st.dataframe(feature_summary, hide_index=True, column_config=OUTCOME_COLUMN_CONFIG, width="stretch")
+
+    st.subheader("Event details")
+    st.caption(
+        f"{event_count} events from {scope.get('symbols', 0)} tested constituents over "
+        f"{scope.get('lookback_days')} calendar days at a {scope.get('minimum_drop_pct'):.1f}% threshold."
+    )
+    st.dataframe(
+        frame,
+        hide_index=True,
+        key="market_feature_lab_events",
+        column_config={
+            "Ticker": st.column_config.TextColumn(pinned=True),
+            "Signal date": st.column_config.DateColumn(format="YYYY-MM-DD"),
+            "Entry date": st.column_config.DateColumn(format="YYYY-MM-DD"),
+            "Prior close": st.column_config.NumberColumn(format="$%.2f"),
+            "Entry open": st.column_config.NumberColumn(format="$%.2f"),
+            "Close-to-close drop": st.column_config.NumberColumn(format="%.2f%%"),
+            "Excess drop vs SPY": st.column_config.NumberColumn(format="%.2f%%"),
+            "Drop / prior volatility": st.column_config.NumberColumn(format="%.2f×"),
+            "Overnight gap": st.column_config.NumberColumn(format="%.2f%%"),
+            "Intraday return": st.column_config.NumberColumn(format="%.2f%%"),
+            "5-session return": st.column_config.NumberColumn(format="%.2f%%"),
+            "10-session return": st.column_config.NumberColumn(format="%.2f%%"),
+            "20-session return": st.column_config.NumberColumn(format="%.2f%%"),
+            "30-session return": st.column_config.NumberColumn(format="%.2f%%"),
+            "Sessions to recovery": st.column_config.NumberColumn(format="%d"),
+            "30-session maximum drawdown": st.column_config.NumberColumn(format="%.2f%%"),
+            "30-session maximum favorable move": st.column_config.NumberColumn(format="%.2f%%"),
+        },
+        width="stretch",
+    )
+    st.download_button(
+        "Download market feature CSV",
+        frame.to_csv(index=False),
+        "market_feature_events.csv",
+        "text/csv",
+    )
+
+
 def display_report(report: ResearchReport) -> None:
     st.subheader(f"{report.ticker} research report")
     score_column, coverage_column, summary_column = st.columns([1, 1, 3])
@@ -376,6 +664,119 @@ def display_qwen_evidence_preview(context: ResearchContext) -> None:
         st.json(context.to_payload(), expanded=False)
 
 
+def display_market_data_preview(context: ResearchContext) -> None:
+    """Show collected Alpaca bars without changing model input or scoring."""
+    with st.container(border=True):
+        st.subheader("Raw Alpaca market data")
+        st.caption(
+            "Inspection only: these bars are not sent to Qwen and do not affect evidence coverage or recovery scoring. "
+            "Volume, trade count, and VWAP reflect the configured Alpaca feed."
+        )
+        bars = getattr(context, "market_bars", ())
+        if not bars:
+            st.info("No retained bars are available. Run fresh ticker research to populate this preview.")
+            return
+        frame = pd.DataFrame(
+            {
+                "Date": bar.day,
+                "Open": bar.open,
+                "High": bar.high,
+                "Low": bar.low,
+                "Close": bar.close,
+                "Volume": bar.volume,
+                "Trade count": bar.trade_count,
+                "VWAP": bar.vwap,
+            }
+            for bar in reversed(bars)
+        )
+        st.caption(
+            f"{len(frame)} most recent trading sessions retained · "
+            f"volume present for {frame['Volume'].notna().sum()} · "
+            f"trade count present for {frame['Trade count'].notna().sum()} · "
+            f"VWAP present for {frame['VWAP'].notna().sum()}"
+        )
+        st.dataframe(
+            frame,
+            hide_index=True,
+            column_config={
+                "Date": st.column_config.DateColumn(format="YYYY-MM-DD", pinned=True),
+                "Open": st.column_config.NumberColumn(format="$%.2f"),
+                "High": st.column_config.NumberColumn(format="$%.2f"),
+                "Low": st.column_config.NumberColumn(format="$%.2f"),
+                "Close": st.column_config.NumberColumn(format="$%.2f"),
+                "Volume": st.column_config.NumberColumn(format="%.0f"),
+                "Trade count": st.column_config.NumberColumn(format="%d"),
+                "VWAP": st.column_config.NumberColumn(format="$%.4f"),
+            },
+            width="stretch",
+        )
+
+
+def display_market_features_preview(context: ResearchContext) -> None:
+    """Show deterministic drop-event features without changing model input."""
+    with st.container(border=True):
+        st.subheader("Market features preview")
+        st.caption(
+            "Inspection only: these features are not sent to Qwen and do not affect evidence coverage or recovery scoring. "
+            "The event is the latest qualifying close-to-close decline with a following day-3 entry session."
+        )
+        features = getattr(context, "market_features", None)
+        if features is None:
+            st.info(
+                "No actionable drop meeting the selected threshold was found in the fetched history. "
+                "Run fresh ticker research after changing the minimum-drop control."
+            )
+            return
+
+        st.caption(
+            f"Reference close {features.prior_day} · signal close {features.signal_day} · "
+            f"earliest entry {features.entry_day} · threshold {features.minimum_drop_pct:.1f}%"
+        )
+        feature_rows = [
+            {
+                "Feature": "Close-to-close drop",
+                "Value": features.close_to_close_drop_pct,
+                "Unit": "%",
+                "What it shows": "The stock's day-1 close to day-2 close signal.",
+            },
+            {
+                "Feature": "Excess drop vs SPY",
+                "Value": features.excess_drop_vs_spy_pct,
+                "Unit": "%",
+                "What it shows": "Stock return minus SPY; more negative means more stock-specific weakness.",
+            },
+            {
+                "Feature": "Drop / prior volatility",
+                "Value": features.drop_volatility_multiple,
+                "Unit": "×",
+                "What it shows": "Absolute drop magnitude measured in normal daily-volatility units.",
+            },
+            {
+                "Feature": "Overnight gap",
+                "Value": features.overnight_gap_pct,
+                "Unit": "%",
+                "What it shows": "Day-1 close to day-2 open.",
+            },
+            {
+                "Feature": "Signal-day intraday return",
+                "Value": features.intraday_return_pct,
+                "Unit": "%",
+                "What it shows": "Day-2 open to day-2 close.",
+            },
+        ]
+        st.dataframe(
+            pd.DataFrame(feature_rows),
+            hide_index=True,
+            column_config={"Value": st.column_config.NumberColumn(format="%.2f")},
+            width="stretch",
+        )
+        if features.prior_daily_volatility_pct is None:
+            st.caption(
+                f"Volatility unavailable: {features.volatility_return_count} of 20 required pre-signal returns were available."
+            )
+        st.caption("The overnight and intraday returns compound to the close-to-close result; they are not simply additive.")
+
+
 def _format_days_until(days: int | None) -> str:
     if days is None:
         return "Unavailable"
@@ -384,7 +785,7 @@ def _format_days_until(days: int | None) -> str:
     return f"{days} calendar days"
 
 
-def ticker_research_section() -> None:
+def ticker_research_section(minimum_drop_pct: float) -> None:
     st.header("Ticker research")
     st.caption("Combines recent market data, SEC evidence, and bounded readable news excerpts, then asks the local Qwen3 model for a structured, evidence-grounded assessment.")
     ticker = st.text_input("Ticker to research", placeholder="e.g. AAPL").strip().upper()
@@ -411,7 +812,11 @@ def ticker_research_section() -> None:
             progress = ResearchProgress(status_slot, ticker, ollama_timeout=model_client.config.timeout)
             try:
                 progress.begin("Validating ticker")
-                context = research_service().collect(ticker, on_stage=progress.begin)
+                context = research_service().collect(
+                    ticker,
+                    minimum_drop_pct=minimum_drop_pct,
+                    on_stage=progress.begin,
+                )
                 st.session_state["ticker_research_context"] = context
                 report = generate_report(context, model_client, on_stage=progress.begin)
                 st.session_state["ticker_research_report"] = report
@@ -434,10 +839,12 @@ def ticker_research_section() -> None:
         render_saved_research_status(status_slot)
 
     report = st.session_state.get("ticker_research_report")
+    context = st.session_state.get("ticker_research_context")
     if isinstance(report, ResearchReport) and hasattr(report, "evidence_coverage"):
         display_report(report)
-        context = st.session_state.get("ticker_research_context")
         if isinstance(context, ResearchContext):
+            display_market_features_preview(context)
+            display_market_data_preview(context)
             display_qwen_evidence_preview(context)
             display_earnings_preview(context.earnings)
             st.write("**Sources**")
@@ -452,11 +859,34 @@ def ticker_research_section() -> None:
     elif report is not None:
         st.session_state.pop("ticker_research_report", None)
         st.info("The saved report used the prior one-score format. Run ticker research again to calculate recovery score and evidence coverage.")
+    elif isinstance(context, ResearchContext):
+        display_market_features_preview(context)
+        display_market_data_preview(context)
+
+
+def research_and_screen_page(min_drop: float) -> None:
+    ticker_research_section(min_drop)
+    st.divider()
+    screen_page(min_drop)
 
 
 def main() -> None:
     min_drop = configure_sidebar()
-    ticker_research_section()
-    st.divider()
-    page = st.navigation([st.Page(lambda: screen_page(min_drop), title="Drop screener", icon="📉", url_path="screener", default=True)])
+    page = st.navigation(
+        [
+            st.Page(
+                lambda: research_and_screen_page(min_drop),
+                title="Research and screener",
+                icon="📉",
+                url_path="screener",
+                default=True,
+            ),
+            st.Page(
+                lambda: market_feature_lab_page(min_drop),
+                title="Market feature lab",
+                icon="🧪",
+                url_path="market-feature-lab",
+            ),
+        ]
+    )
     page.run()

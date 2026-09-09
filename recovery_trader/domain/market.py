@@ -13,3 +13,6 @@ class DailyBar:
     high: float
     low: float
     close: float
+    volume: float | None = None
+    trade_count: int | None = None
+    vwap: float | None = None

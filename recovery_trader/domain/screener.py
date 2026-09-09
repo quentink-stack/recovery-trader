@@ -14,6 +14,7 @@ from recovery_trader.domain.market import DailyBar
 class WatchlistItem:
     ticker: str
     company: str
+    sector: str = ""
 
 
 @dataclass(frozen=True)
@@ -36,7 +37,15 @@ def load_watchlist(path: Path) -> list[WatchlistItem]:
         reader = csv.DictReader(handle)
         if not reader.fieldnames or "ticker" not in reader.fieldnames:
             raise ValueError("Watchlist CSV must include a ticker column.")
-        return [WatchlistItem(row["ticker"].upper().strip(), row.get("company", "").strip()) for row in reader if row.get("ticker", "").strip()]
+        return [
+            WatchlistItem(
+                row["ticker"].upper().strip(),
+                row.get("company", "").strip(),
+                row.get("sector", "").strip(),
+            )
+            for row in reader
+            if row.get("ticker", "").strip()
+        ]
 
 
 def latest_large_drop(item: WatchlistItem, bars: list[DailyBar], minimum_drop_pct: float) -> DropResearch | None:

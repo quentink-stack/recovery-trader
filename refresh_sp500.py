@@ -50,14 +50,22 @@ class ConstituentsTableParser(HTMLParser):
             self.in_table = False
 
 
-def fetch_constituents() -> list[tuple[str, str]]:
+def fetch_constituents() -> list[tuple[str, str, str]]:
     request = Request(SOURCE_URL, headers={"User-Agent": "recovery-trader/1.0 (local research tool)"})
     with urlopen(request, timeout=30) as response:
         document = response.read().decode("utf-8")
     parser = ConstituentsTableParser()
     parser.feed(document)
     rows = parser.rows[1:]
-    constituents = [(unescape(row[0]).strip().upper(), unescape(row[1]).strip()) for row in rows if len(row) >= 2]
+    constituents = [
+        (
+            unescape(row[0]).strip().upper(),
+            unescape(row[1]).strip(),
+            unescape(row[2]).strip(),
+        )
+        for row in rows
+        if len(row) >= 3
+    ]
     if len(constituents) < 500:
         raise ValueError(f"Expected at least 500 constituents, found {len(constituents)}. The source table may have changed.")
     return constituents
@@ -68,7 +76,7 @@ def main() -> None:
     temporary_path = DESTINATION.with_suffix(".tmp")
     with temporary_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
-        writer.writerow(["ticker", "company"])
+        writer.writerow(["ticker", "company", "sector"])
         writer.writerows(constituents)
     temporary_path.replace(DESTINATION)
     print(f"Wrote {len(constituents)} S&P 500 constituents to {DESTINATION}")

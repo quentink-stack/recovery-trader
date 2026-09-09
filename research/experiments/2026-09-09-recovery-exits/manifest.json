@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "experiment_id": "2026-09-09-recovery-exits",
+  "status": "exploratory_not_independent_validation",
+  "recorded_date": "2026-09-09",
+  "record": "README.md",
+  "findings": "../../../docs/market-consistency-findings.md",
+  "path_base": "repository root",
+  "backup_status": "Raw inputs and individual trades remain local under ignored exports/. No external backup has been created or verified.",
+  "code_provenance": "Hashes identify the working-tree scripts when this record was archived. The original analysis did not capture a code commit at execution. Commit the record and implementation together; do not claim a clean historical revision for this run.",
+  "raw_local_files": [
+    {
+      "path": "exports/market-analysis-20260909-152502-884305/events.csv",
+      "bytes": 1389935,
+      "sha256": "4daa3e2ab254aded4a4fbeaa8e238f47a23d6dd60956086b5d0270a0c556e531"
+    },
+    {
+      "path": "exports/market-analysis-20260909-152502-884305/daily_bars.csv",
+      "bytes": 17210346,
+      "sha256": "78cc73c37375c078e5f7ed8ee3808ea13c8e617c730f1d34515c7ae16292e5fc"
+    },
+    {
+      "path": "exports/market-analysis-20260909-152502-884305/universe_coverage.csv",
+      "bytes": 30912,
+      "sha256": "cf3746fcf9895d17a63115efc71204ae5b42c9bda57777a9de0c3668843d23ff"
+    },
+    {
+      "path": "exports/market-analysis-20260909-152502-884305/metadata.json",
+      "bytes": 1405,
+      "sha256": "10f619f590d1bcaa42718f63f4a3414f1483efed3ff1f4dca0bd651ea5173186"
+    },
+    {
+      "path": "exports/consistency-20260909-154540-423773/trades.csv",
+      "bytes": 2822257,
+      "sha256": "6bb99a454a6a793e1296ec411fbd996799844d2e40bec85c55af9af3f5b1bea4"
+    }
+  ],
+  "committed_artifacts": [
+    {
+      "path": "research/experiments/2026-09-09-recovery-exits/summary.csv",
+      "bytes": 22251,
+      "sha256": "9538516dccb5fb72e6d910f1211223df4616c5eb13bd84351d2ed6ed040c4ae7"
+    },
+    {
+      "path": "research/experiments/2026-09-09-recovery-exits/by_quarter.csv",
+      "bytes": 99231,
+      "sha256": "aed8c69f7e72490c7d348007eef28af0f6c78df813c9a242098fc4bc5c68f611"
+    },
+    {
+      "path": "research/experiments/2026-09-09-recovery-exits/by_sector.csv",
+      "bytes": 242492,
+      "sha256": "4bb8328446017a6a5ba2830b9d5201ed1ba87104dcda3b5e8d15675501baabdd"
+    },
+    {
+      "path": "research/experiments/2026-09-09-recovery-exits/methodology.json",
+      "bytes": 2695,
+      "sha256": "39b89a620d82e0791799d4f2969823171468f8d476e21046d9522be86dd513d0"
+    }
+  ],
+  "implementation_at_archival": [
+    {
+      "path": "export_market_analysis.py",
+      "bytes": 8922,
+      "sha256": "c95b060c592deb920423f71c1c1ac480252912b046e11196d86752b7357e52fc"
+    },
+    {
+      "path": "analyze_market_consistency.py",
+      "bytes": 12361,
+      "sha256": "69a203a5b005c8bb2ba80554610c12537072982784e7a7af0ce2dccee493e3aa"
+    },
+    {
+      "path": "recovery_trader/research/consistency.py",
+      "bytes": 2690,
+      "sha256": "8070475ee0c4eb01158ee32dc59f6ca825715719261d83a7868fbd29ebfc1fa3"
+    },
+    {
+      "path": "recovery_trader/research/market_feature_lab.py",
+      "bytes": 8921,
+      "sha256": "336f559adff8f7797fef18bbff59b58bee5e9c147fabf2e43c9b9ca89e21ab26"
+    },
+    {
+      "path": "recovery_trader/research/market_features.py",
+      "bytes": 5090,
+      "sha256": "65a399fbfb659e48bb3436ba08e87706bc7704024dfc7d9647b45b4a793fa937"
+    },
+    {
+      "path": "recovery_trader/domain/market.py",
+      "bytes": 363,
+      "sha256": "880f7f88ce6bd4184d0dbae0be9cfdc615809b7ec7b9d6426273788f31510c2d"
+    }
+  ],
+  "hash_note": "SHA-256 hashes are of file bytes as archived. Git line-ending conversion may change text hashes; raw backup copies should retain exact bytes. Hashes identify data, but cannot reconstruct missing files."
+}

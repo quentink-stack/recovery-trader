@@ -13,7 +13,7 @@ class ResearchContextTests(TestCase):
         bars = [
             DailyBar(date(2026, 8, 21), 100, 105, 98, 102),
             DailyBar(date(2026, 8, 20), 95, 101, 94, 100),
-            DailyBar(date(2026, 8, 24), 103, 110, 101, 108),
+            DailyBar(date(2026, 8, 24), 103, 110, 101, 108, 125000, 420, 106.75),
         ]
         article = NewsArticle(
             "TEST earnings",
@@ -30,10 +30,57 @@ class ResearchContextTests(TestCase):
         self.assertEqual(context.market.lookback_start, "2026-08-21")  # type: ignore[union-attr]
         self.assertEqual(context.market.bar_count, 2)  # type: ignore[union-attr]
         self.assertAlmostEqual(context.market.return_pct, (108 / 102 - 1) * 100)  # type: ignore[union-attr]
+        self.assertEqual(len(context.market_bars), 2)
+        self.assertEqual(context.market_bars[-1].volume, 125000)
+        self.assertEqual(context.market_bars[-1].trade_count, 420)
+        self.assertEqual(context.market_bars[-1].vwap, 106.75)
         self.assertEqual(context.to_payload()["news"][0]["published_at"], "2026-08-24T12:00:00+00:00")
         self.assertEqual(context.to_payload()["news"][0]["excerpt"], "Revenue grew year over year.")
         self.assertNotIn("url", context.to_payload()["news"][0])
+        self.assertNotIn("market_bars", context.to_payload())
+        self.assertNotIn("market_features", context.to_payload())
         self.assertNotIn("earnings", context.to_payload())
+
+    def test_service_batches_ticker_and_spy_for_market_feature_preview(self) -> None:
+        class FakeMarketData:
+            def daily_bars_for_symbols(
+                self, tickers: tuple[str, ...], start: date, end: date
+            ) -> dict[str, list[DailyBar]]:
+                self.request = tickers, start, end
+                days = [date(2026, 7, day) for day in range(1, 24)]
+                ticker_bars = [
+                    DailyBar(day, 100 + index, 101 + index, 99 + index, 100 + index)
+                    for index, day in enumerate(days[:21])
+                ]
+                ticker_bars.extend(
+                    [
+                        DailyBar(days[21], 114, 115, 107, 108),
+                        DailyBar(days[22], 109, 112, 108, 111),
+                    ]
+                )
+                spy_bars = [
+                    DailyBar(days[20], 120, 121, 119, 120),
+                    DailyBar(days[21], 119, 120, 118, 118.8),
+                    DailyBar(days[22], 119, 120, 118, 119),
+                ]
+                return {"TEST": ticker_bars, "SPY": spy_bars}
+
+        class FakeNewsClient:
+            def recent_articles(self, ticker: str, limit: int) -> list[NewsArticle]:
+                return []
+
+        market_data = FakeMarketData()
+        context = ResearchService(market_data, FakeNewsClient()).collect(  # type: ignore[arg-type]
+            "test", as_of=date(2026, 7, 23), minimum_drop_pct=5.0
+        )
+
+        self.assertEqual(market_data.request[0], ("TEST", "SPY"))
+        self.assertIsNotNone(context.market_features)
+        assert context.market_features is not None
+        self.assertAlmostEqual(context.market_features.close_to_close_drop_pct, -10.0)
+        self.assertAlmostEqual(context.market_features.spy_return_pct, -1.0)
+        self.assertAlmostEqual(context.market_features.excess_drop_vs_spy_pct, -9.0)
+        self.assertNotIn("market_features", context.to_payload())
 
     def test_empty_bars_leave_market_context_empty(self) -> None:
         context = build_research_context("TEST", [], [])

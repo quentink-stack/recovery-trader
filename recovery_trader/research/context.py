@@ -9,6 +9,7 @@ from recovery_trader.domain.market import DailyBar
 from recovery_trader.integrations.news import NewsArticle
 from recovery_trader.integrations.sec_edgar import CompanyProfile, EarningsFacts, EarningsRelease
 from recovery_trader.research.earnings import EarningsBrief, brief_to_payload
+from recovery_trader.research.market_features import MarketFeatures, build_market_features
 
 
 # Keep this aligned with the deterministic category weights in report.py.  The
@@ -56,6 +57,8 @@ class ResearchContext:
     market: MarketSummary | None
     news: tuple[NewsArticle, ...]
     earnings: EarningsEvidence | None = None
+    market_bars: tuple[DailyBar, ...] = ()
+    market_features: MarketFeatures | None = None
 
     def to_payload(self) -> dict:
         """Return JSON-serializable evidence for an Ollama prompt."""
@@ -99,6 +102,8 @@ def build_research_context(
     as_of: date | None = None,
     lookback_bars: int = 30,
     earnings: EarningsEvidence | None = None,
+    benchmark_bars: list[DailyBar] | None = None,
+    minimum_drop_pct: float = 5.0,
 ) -> ResearchContext:
     """Build a compact context from recent bars and already-fetched news."""
     normalized_ticker = ticker.strip().upper()
@@ -108,6 +113,7 @@ def build_research_context(
         raise ValueError("Lookback bars must be positive.")
 
     ordered_bars = sorted(bars, key=lambda bar: bar.day)
+    market_features = build_market_features(ordered_bars, benchmark_bars or [], minimum_drop_pct)
     recent_bars = ordered_bars[-lookback_bars:]
     market = None
     if recent_bars:
@@ -123,4 +129,12 @@ def build_research_context(
             bar_count=len(recent_bars),
         )
 
-    return ResearchContext(normalized_ticker, (as_of or date.today()).isoformat(), market, tuple(articles), earnings)
+    return ResearchContext(
+        normalized_ticker,
+        (as_of or date.today()).isoformat(),
+        market,
+        tuple(articles),
+        earnings=earnings,
+        market_bars=tuple(recent_bars),
+        market_features=market_features,
+    )
