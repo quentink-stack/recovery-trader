@@ -16,11 +16,11 @@ inactive until they are validated and explicitly approved.
 - [ ] Show prompt size before generation: character count, approximate token
   count, number of readable article excerpts, and the configured model context
   window. Warn when it is likely to crowd out the response.
-- [ ] Aim to supply three usable article excerpts from the nine news candidates.
-  Record why extraction fails, continue through candidates until three excerpts
-  are found or all nine are exhausted, and try bounded fallbacks such as JSON-LD
-  or an Open Graph description while preserving timeout, size, sanitization, and
-  paywall safeguards.
+- [x] Continue through the nine news candidates in feed order until three usable
+  excerpts are found or all candidates are exhausted.
+- [ ] Record why article extraction fails and try bounded fallbacks such as
+  JSON-LD or an Open Graph description while preserving timeout, size,
+  sanitization, and paywall safeguards.
 - [ ] Deduplicate syndicated or substantially similar news so Qwen does not
   treat the same event as independent confirmation.
 - [ ] Apply a recency policy to news and explicitly label undated articles as

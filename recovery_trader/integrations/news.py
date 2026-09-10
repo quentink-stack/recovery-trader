@@ -28,6 +28,12 @@ LANGUAGE_MENU_PATTERN = re.compile(
     r"Search[\s\W]+Start\s+for\s+free",
     flags=re.IGNORECASE,
 )
+HEADLINE_STOP_WORDS = {
+    "a", "an", "and", "are", "as", "at", "be", "behind", "by", "for", "from",
+    "has", "in", "inc", "into", "is", "it", "its", "management", "million", "of",
+    "on", "or", "s", "says", "shares", "stock", "stocks", "the", "to", "today",
+    "what", "why", "with",
+}
 
 
 @dataclass(frozen=True)
@@ -60,7 +66,7 @@ class _ArticleTextParser(HTMLParser):
         self._article_chunks: list[str] = []
         self._main_chunks: list[str] = []
         self._body_chunks: list[str] = []
-        self._body_heading_start: int | None = None
+        self._body_heading_starts: list[int] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         normalized = tag.lower()
@@ -72,6 +78,8 @@ class _ArticleTextParser(HTMLParser):
             self._main_depth += 1
         elif normalized == "h1":
             self._heading_depth += 1
+            if self._body_depth:
+                self._body_heading_starts.append(len(self._body_chunks))
         elif normalized == "body":
             self._body_depth += 1
 
@@ -92,23 +100,31 @@ class _ArticleTextParser(HTMLParser):
         text = " ".join(data.split())
         if not text or self._ignored_elements:
             return
+        # Keep body text as an independent candidate even when it is nested in
+        # main/article. CSS can visually place the real story after an unrelated
+        # recommendation container that appears first in the HTML.
+        if self._body_depth:
+            self._body_chunks.append(text)
         if self._article_depth:
             self._article_chunks.append(text)
-        elif self._main_depth:
+        if self._main_depth:
             self._main_chunks.append(text)
-        elif self._body_depth:
-            if self._heading_depth and self._body_heading_start is None:
-                self._body_heading_start = len(self._body_chunks)
-            self._body_chunks.append(text)
 
-    def text(self) -> str:
+    def text_candidates(self) -> tuple[str, ...]:
+        candidates: list[str] = []
+        # Prefer heading-anchored sections over broad publisher containers,
+        # which commonly begin with navigation, ads, or related stories.
+        candidates.extend(
+            " ".join(self._body_chunks[start:])
+            for start in self._body_heading_starts
+        )
         if self._article_chunks:
-            return " ".join(self._article_chunks)
+            candidates.append(" ".join(self._article_chunks))
         if self._main_chunks:
-            return " ".join(self._main_chunks)
-        if self._body_heading_start is not None:
-            return " ".join(self._body_chunks[self._body_heading_start :])
-        return " ".join(self._body_chunks)
+            candidates.append(" ".join(self._main_chunks))
+        if self._body_chunks:
+            candidates.append(" ".join(self._body_chunks))
+        return tuple(dict.fromkeys(candidate for candidate in candidates if candidate))
 
     def _is_ignored_container(self, attrs: list[tuple[str, str | None]]) -> bool:
         attributes = {name.lower(): (value or "") for name, value in attrs}
@@ -188,17 +204,48 @@ class NewsClient:
         return articles
 
     def enrich_articles(self, articles: list[NewsArticle]) -> list[NewsArticle]:
-        """Attach readable excerpts for a small, bounded set of public article links.
+        """Attach up to the configured number of readable excerpts.
 
-        A failed, blocked, paywalled, or non-HTML page remains headline-only so
-        a single publisher cannot fail the complete ticker-research request.
+        Candidates retain their Google News feed order. Failed, blocked,
+        paywalled, and non-HTML pages remain headline-only, and the next candidate
+        is attempted until the target is met or every candidate is exhausted.
         """
-        selected = articles[: self.article_excerpt_limit]
-        if not selected:
-            return articles
-        with ThreadPoolExecutor(max_workers=len(selected)) as executor:
-            enriched = list(executor.map(self._enrich_article, selected))
-        return enriched + articles[len(selected) :]
+        enriched = list(articles)
+        excerpt_count = sum(bool(article.excerpt) for article in enriched)
+        candidate_indexes = [index for index, article in enumerate(enriched) if not article.excerpt]
+        slots = min(self.article_excerpt_limit - excerpt_count, len(candidate_indexes))
+        if slots <= 0:
+            return enriched
+
+        # Keep at most one request in flight for each unfilled excerpt slot. A
+        # failed request is replaced by the next feed candidate. This preserves
+        # feed priority, avoids fetching all articles eagerly, and still performs
+        # the independent network reads concurrently.
+        with ThreadPoolExecutor(max_workers=slots) as executor:
+            next_candidate = 0
+            pending = []
+            for _ in range(slots):
+                index = candidate_indexes[next_candidate]
+                next_candidate += 1
+                pending.append((index, executor.submit(self._enrich_article, enriched[index])))
+
+            while pending:
+                index, future = pending.pop(0)
+                result = future.result()
+                enriched[index] = result
+                if result.excerpt:
+                    excerpt_count += 1
+                elif next_candidate < len(candidate_indexes):
+                    replacement_index = candidate_indexes[next_candidate]
+                    next_candidate += 1
+                    pending.append(
+                        (
+                            replacement_index,
+                            executor.submit(self._enrich_article, enriched[replacement_index]),
+                        )
+                    )
+
+        return enriched
 
     def _enrich_article(self, article: NewsArticle) -> NewsArticle:
         source_url = self._resolve_google_news_url(article.url)
@@ -230,7 +277,11 @@ class NewsClient:
         try:
             parser = _ArticleTextParser()
             parser.feed(document.decode("utf-8", errors="replace"))
-            return _truncate_text(parser.text(), self.max_excerpt_chars, headline=headline)
+            return _select_relevant_excerpt(
+                parser.text_candidates(),
+                self.max_excerpt_chars,
+                headline=headline,
+            )
         except (ValueError, UnicodeError):
             return None
 
@@ -318,6 +369,44 @@ def _truncate_text(text: str, limit: int, *, headline: str = "") -> str | None:
     if last_sentence >= limit // 2:
         return cutoff[: last_sentence + 1]
     return f"{cutoff.rstrip()}…"
+
+
+def _select_relevant_excerpt(candidates: tuple[str, ...], limit: int, *, headline: str) -> str | None:
+    """Choose text tied to the requested headline, rejecting ads and sidebars."""
+    scored: list[tuple[float, str]] = []
+    for candidate in candidates:
+        excerpt = _truncate_text(candidate, limit, headline=headline)
+        if not excerpt:
+            continue
+        score = _excerpt_relevance_score(excerpt, headline)
+        if score is not None:
+            scored.append((score, excerpt))
+    return max(scored, key=lambda item: item[0])[1] if scored else None
+
+
+def _excerpt_relevance_score(excerpt: str, headline: str) -> float | None:
+    """Require headline alignment before text can become model evidence."""
+    headline_without_publisher = re.split(r"\s[-–—]\s", headline, maxsplit=1)[0].strip()
+    normalized_excerpt = _comparison_text(excerpt)
+    normalized_headline = _comparison_text(headline_without_publisher)
+    exact_headline = (
+        len(normalized_headline) >= 4
+        and normalized_excerpt.startswith(normalized_headline)
+    ) or (
+        len(normalized_headline) >= 12
+        and normalized_headline in normalized_excerpt[:2_000]
+    )
+    headline_terms = {
+        token
+        for token in re.findall(r"[a-z0-9]+", normalized_headline)
+        if len(token) >= 2 and token not in HEADLINE_STOP_WORDS
+    }
+    excerpt_terms = set(re.findall(r"[a-z0-9]+", normalized_excerpt))
+    overlap = len(headline_terms & excerpt_terms)
+
+    if not exact_headline and (len(excerpt) < 120 or overlap < 2):
+        return None
+    return (100 if exact_headline else 0) + overlap * 10 + min(len(excerpt), 3_000) / 3_000
 
 
 def _sanitize_article_text(text: str, *, headline: str = "") -> str:
