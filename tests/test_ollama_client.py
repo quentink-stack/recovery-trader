@@ -20,9 +20,12 @@ class FakeResponse:
 
 
 class OllamaClientTests(TestCase):
-    def test_default_timeout_allows_seven_minutes_for_local_generation(self) -> None:
-        self.assertEqual(OllamaConfig().timeout, 420)
-        self.assertEqual(OllamaConfig().temperature, 0.15)
+    def test_default_local_model_configuration(self) -> None:
+        config = OllamaConfig()
+
+        self.assertEqual(config.model, "qwen3:14b")
+        self.assertEqual(config.timeout, 420)
+        self.assertEqual(config.temperature, 0.15)
 
     def test_generate_uses_configured_model_and_json_format(self) -> None:
         client = OllamaClient(OllamaConfig("http://ollama.test", "test-model", 10))

@@ -14,7 +14,7 @@ this record before changing research logic.
 
 ## Local Ollama
 
-Ticker research uses Ollama at `http://localhost:11434` with the `qwen3:8b-q4_K_M` model by default. Install Ollama, then run these commands in separate PowerShell windows:
+Ticker research uses Ollama at `http://localhost:11434` with the `qwen3:14b` model by default. Install Ollama, then run these commands in separate PowerShell windows:
 
 ```powershell
 ollama serve
@@ -23,7 +23,7 @@ ollama serve
 ## Run the web app
 
 ```powershell
-ollama pull qwen3:8b-q4_K_M
+ollama pull qwen3:14b
 cd 'C:\Users\Quentin\Documents\Personal Projects\git\recovery-trader'
 python -m pip install -r requirements.txt
 python -m streamlit run streamlit_app.py
@@ -34,7 +34,7 @@ The app opens in your browser. It is a local, read-only research dashboard and c
 Leave `ollama serve` running. Ollama loads the model automatically on the first ticker-research request. To load it before using the app, run:
 
 ```powershell
-ollama run qwen3:8b-q4_K_M "Reply READY"
+ollama run qwen3:14b "Reply READY"
 ```
 
 If `ollama serve` reports that the address is already in use, Ollama is already running and you can continue with the second window.
@@ -43,7 +43,7 @@ The client reads these settings automatically when it starts. The values shown b
 
 ```powershell
 $env:OLLAMA_BASE_URL = 'http://localhost:11434'
-$env:OLLAMA_MODEL = 'qwen3:8b-q4_K_M'
+$env:OLLAMA_MODEL = 'qwen3:14b'
 $env:OLLAMA_TIMEOUT = 420
 $env:OLLAMA_TEMPERATURE = 0.15
 ```
