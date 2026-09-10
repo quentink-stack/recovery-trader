@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: en-US
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  high_level_summary_in_walkthrough: true
+  poem: false
+  auto_review:
+    enabled: true
+    drafts: false
+  path_instructions:
+    - path: "**/*"
+      instructions: >-
+        Follow AGENTS.md. Prioritize actionable correctness, security, and
+        regression findings over style preferences. Check that credentials,
+        raw downloads, per-trade exports, and logs are not committed.
+        For market features, strategy experiments, or scoring changes, consult
+        research/README.md and the relevant experiment records. Distinguish
+        observed findings, proposed experiments, and user-approved app changes;
+        exploratory results alone do not authorize Qwen scoring changes.
+        Preserve previous result snapshots and identify reused evaluation data.
+    - path: "**/*.py"
+      instructions: >-
+        Check missing or stale market data handling, date and timezone boundaries,
+        look-ahead bias in backtests, error handling for external services, and
+        consistency between reported scores and the evidence actually available.
+        Keep the application read-only with no order submission endpoints.

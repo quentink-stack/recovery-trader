@@ -2,6 +2,22 @@
 
 A local research screener for sharp single-day equity declines.
 
+## Pull request reviews
+
+CodeRabbit is configured in [`.coderabbit.yaml`](.coderabbit.yaml) as an additional
+PR reviewer. It reviews non-draft PRs targeting the default branch automatically,
+with guidance covering research continuity, data handling, and scoring correctness.
+
+To activate it, a repository administrator must
+[install the CodeRabbit GitHub app](https://github.com/apps/coderabbitai) for
+`quentink-stack/recovery-trader`, then merge this configuration into the default
+branch. Configuration alone does not install or activate the service.
+Review availability depends on the account's CodeRabbit plan.
+
+For an existing PR, comment `@coderabbitai review` to request a review.
+See the [automatic review documentation](https://docs.coderabbit.ai/configuration/auto-review)
+for trigger details.
+
 ## Saved research and results
 
 Start at [research/README.md](research/README.md) for the current findings, dated
