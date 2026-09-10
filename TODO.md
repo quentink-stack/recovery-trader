@@ -4,6 +4,10 @@ This is an analysis-and-research backlog, not a list of trading recommendations.
 Use it to capture ideas first; prioritize only after deciding that the data and
 measurement method are reliable enough.
 
+Completed findings and experiment history are recorded in
+[`research/README.md`](research/README.md). Proposed scoring changes remain
+inactive until they are validated and explicitly approved.
+
 ## Now: make Qwen's evidence more precise
 
 - [ ] Trim the remaining prompt-only fields that do not alter Qwen's analysis
@@ -12,8 +16,11 @@ measurement method are reliable enough.
 - [ ] Show prompt size before generation: character count, approximate token
   count, number of readable article excerpts, and the configured model context
   window. Warn when it is likely to crowd out the response.
-- [ ] Use a tighter article extraction fallback, such as JSON-LD or an Open
-  Graph description, when a publisher page lacks useful article markup.
+- [ ] Aim to supply three usable article excerpts from the nine news candidates.
+  Record why extraction fails, continue through candidates until three excerpts
+  are found or all nine are exhausted, and try bounded fallbacks such as JSON-LD
+  or an Open Graph description while preserving timeout, size, sanitization, and
+  paywall safeguards.
 - [ ] Deduplicate syndicated or substantially similar news so Qwen does not
   treat the same event as independent confirmation.
 - [ ] Apply a recency policy to news and explicitly label undated articles as
@@ -23,6 +30,10 @@ measurement method are reliable enough.
 
 ## Improve deterministic analysis before asking Qwen
 
+- [ ] Reevaluate the market category and its 30% recovery-score weight. Trace
+  exactly how daily bars become the market payload, Qwen rating, market evidence
+  coverage, and final score contribution. Compare the current raw summary with
+  the five previewed deterministic features before proposing or testing changes.
 - [ ] Add price-action features that are defined before model use: distance
   from the 20-day high/low, realized volatility, recovery from the signal low,
   and days since the qualifying drop.
@@ -50,6 +61,8 @@ measurement method are reliable enough.
   insurers, and businesses where cash flow or debt comparisons are atypical.
 - [ ] Validate earnings conclusions by filing availability date so later facts
   never leak into historical research or backtests.
+- [ ] Classify historical earnings events using only information available on
+  each signal date, then compare that subset with the broader large-drop sample.
 
 ## Backtesting and strategy lab
 
@@ -57,13 +70,15 @@ measurement method are reliable enough.
   recovery confirmation, all using point-in-time available signals.
 - [ ] Sweep trailing-stop settings by initial stop, trailing percentage or ATR,
   maximum holding period, and profit target; report both return and drawdown.
-- [ ] Include realistic frictions: opening gaps, slippage, commissions where
-  applicable, unfilled stops, position sizing, and overlapping positions.
+- [ ] Test a capital-constrained portfolio with realistic opening gaps,
+  slippage, commissions where applicable, unfilled stops, position sizing,
+  overlapping positions, and sector/date exposure limits.
 - [ ] Segment results by market regime, sector, volatility, and drop severity
   instead of relying only on an aggregate win rate.
 - [ ] Check survivorship bias in the S&P 500 universe and document whether the
   historical constituent list is point-in-time accurate.
-- [ ] Add out-of-sample evaluation and a paper-trading log before treating any
+- [ ] Freeze the recovery-exit candidate and unchanged 30-session baseline, then
+  evaluate them on an unseen window. Add a paper-trading log before treating any
   parameters as usable.
 
 ## Data and application quality

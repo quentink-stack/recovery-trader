@@ -25,25 +25,11 @@ completed for this candidate.
 The [detailed findings](../docs/market-consistency-findings.md) explain the first
 run. The dated folder holds its machine-readable aggregate results and provenance.
 
-## Pending research, not implemented decisions
+## Pending work
 
-1. Specify an unseen evaluation window and freeze the recovery rule before
-   looking at its results; compare with the unchanged 30-session baseline.
-2. Test a capital-constrained portfolio with explicit position sizing and
-   sector/date exposure limits. Per-trade medians are not portfolio performance.
-3. Classify historical earnings events using information available at the signal
-   date, then test whether that subset differs from all large drops.
-4. Improve news-article extraction so ticker research aims to supply three usable
-   excerpts from its nine article candidates. Record why each missing excerpt
-   failed, continue through additional candidates until three excerpts are found
-   or all nine are exhausted, and preserve the existing download-size, timeout,
-   sanitization, and paywall safeguards.
-5. Reevaluate the market category and its 30% recovery-score weight. First trace
-   exactly how daily bars become the market payload, Qwen rating, market evidence
-   coverage, and final score contribution. Compare the current raw summary with
-   the five deterministic market features already previewed, and define/test any
-   proposed coverage or weighting change before wiring it into scoring.
-6. Only after validation and user approval, consider app or Qwen scoring changes.
+The top-level [TODO.md](../TODO.md) is the single backlog for research and
+application improvements. This file records completed findings and experiment
+history rather than maintaining a second task list.
 
 ## What belongs where
 
