@@ -61,10 +61,16 @@ Both are ignored by Git. No external backup has been created or verified. Back u
 these two folders privately for exact reproduction; the committed aggregates
 alone cannot recreate every trade or raw bar.
 
-From the repository root, with the source export present:
+The archived run used the original root-level command:
 
 ```powershell
 python analyze_market_consistency.py exports/market-analysis-20260909-152502-884305
+```
+
+After the scripts-directory refactor, the equivalent command from the repository root is:
+
+```powershell
+python -m scripts.analyze_market_consistency exports/market-analysis-20260909-152502-884305
 python -B -m unittest discover -s tests
 ```
 

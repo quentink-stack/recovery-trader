@@ -2,7 +2,7 @@ import json
 from unittest import TestCase
 from unittest.mock import patch
 
-from ollama_client import OllamaClient, OllamaConfig, OllamaError
+from recovery_trader.integrations.ollama import OllamaClient, OllamaConfig, OllamaError
 
 
 class FakeResponse:

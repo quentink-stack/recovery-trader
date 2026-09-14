@@ -6,8 +6,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 
-from export_market_analysis import run_export, validated_bars
 from recovery_trader.domain.market import DailyBar
+from scripts.export_market_analysis import run_export, validated_bars
 
 
 class ExportMarketAnalysisTests(TestCase):

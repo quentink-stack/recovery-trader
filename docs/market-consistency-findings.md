@@ -11,7 +11,7 @@ edge. No app behavior or Qwen scoring was changed.
 
 ## What was tested
 
-The offline `analyze_market_consistency.py` script reused the existing two-year
+The offline `scripts/analyze_market_consistency.py` script reused the existing two-year
 Alpaca IEX export. The source contained 4,471 qualifying close-to-close drop
 events at the 5% threshold. It did not identify or require earnings events.
 
@@ -91,7 +91,7 @@ portfolio drawdown, or a forecast of returns.
 ## Reproduction and artifacts
 
 ```powershell
-python analyze_market_consistency.py exports/market-analysis-20260909-152502-884305
+python -m scripts.analyze_market_consistency exports/market-analysis-20260909-152502-884305
 python -B -m unittest discover -s tests
 ```
 

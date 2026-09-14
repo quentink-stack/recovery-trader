@@ -1,4 +1,4 @@
-"""Offline robustness checks on an export_market_analysis.py output directory."""
+"""Offline robustness checks on a market-analysis export directory."""
 
 from __future__ import annotations
 
@@ -205,7 +205,7 @@ def main():
     parser.add_argument("source", type=Path, help="Existing market-analysis export directory")
     parser.add_argument("--output", type=Path, help="New output directory (must not exist)")
     args = parser.parse_args()
-    output = args.output or Path(__file__).resolve().parent / "exports" / f"consistency-{datetime.now():%Y%m%d-%H%M%S-%f}"
+    output = args.output or Path(__file__).resolve().parents[1] / "exports" / f"consistency-{datetime.now():%Y%m%d-%H%M%S-%f}"
     run_analysis(args.source, output)
 
 

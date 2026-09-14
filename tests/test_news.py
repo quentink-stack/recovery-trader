@@ -1,7 +1,7 @@
 from unittest import TestCase
 from unittest.mock import patch
 
-from recovery_trader.integrations.news import NewsArticle, NewsClient, NewsError
+from recovery_trader.integrations.news import NewsArticle, NewsClient, NewsError, _select_relevant_excerpt
 
 
 class FakeResponse:
@@ -26,6 +26,18 @@ RSS = """<?xml version="1.0"?><rss><channel>
 
 
 class NewsClientTests(TestCase):
+    def test_equal_relevance_scores_preserve_heading_first_candidate(self) -> None:
+        heading_candidate = "Nike bottomed out after its recent decline. This is the article body."
+        longer_candidate = f"{heading_candidate} Unrelated recommendations follow after the story."
+
+        selected = _select_relevant_excerpt(
+            (heading_candidate, longer_candidate),
+            500,
+            headline="Nike bottomed out - Example News",
+        )
+
+        self.assertEqual(selected, heading_candidate)
+
     def test_recent_articles_parses_articles_and_limits_results(self) -> None:
         client = NewsClient(timeout=7)
 
@@ -56,7 +68,7 @@ class NewsClientTests(TestCase):
         self.assertEqual(NewsClient().article_excerpt_limit, 3)
 
     def test_enrich_articles_extracts_visible_text_for_qwen(self) -> None:
-        article = NewsArticle("TEST results", "Example News", "https://example.com/results", None)
+        article = NewsArticle("Results", "Example News", "https://example.com/results", None)
         html = """<html><body><nav>Navigation</nav><article><h1>Results</h1><p>Revenue grew 12 percent year over year.</p><script>ignore me</script></article></body></html>"""
         client = NewsClient(article_timeout=7, article_excerpt_limit=1, max_excerpt_chars=500)
 
@@ -95,6 +107,37 @@ class NewsClientTests(TestCase):
 
         self.assertEqual(enriched[0].excerpt, "Revenue grows Revenue grew 12 percent year over year.")
 
+    def test_enrich_articles_prefers_matching_headline_over_unrelated_main_element(self) -> None:
+        title = "Junto Capital Management LP Invests $21.68 Million in Constellation Brands Inc $STZ - MarketBeat"
+        article = NewsArticle(title, "MarketBeat", "https://example.com/stz", None)
+        html = """<html><body>
+        <main><p>→ Elon Musk's Hushed FCC Filing. Sept 25th. (From Paradigm Press) (Ad)</p></main>
+        <h1>Junto Capital Management LP Invests $21.68 Million in Constellation Brands Inc $STZ</h1>
+        <p>Junto Capital disclosed a position in Constellation Brands. The filing concerns STZ shares and the investor's reported holdings.</p>
+        </body></html>"""
+        client = NewsClient(article_excerpt_limit=1, max_excerpt_chars=500)
+
+        with patch("recovery_trader.integrations.news.urlopen", return_value=FakeResponse(html, "text/html")):
+            enriched = client.enrich_articles([article])
+
+        self.assertIn("Constellation Brands", enriched[0].excerpt or "")
+        self.assertNotIn("Elon Musk", enriched[0].excerpt or "")
+
+    def test_enrich_articles_rejects_unrelated_promotional_element(self) -> None:
+        article = NewsArticle(
+            "Junto Capital Management LP Invests $21.68 Million in Constellation Brands Inc $STZ - MarketBeat",
+            "MarketBeat",
+            "https://example.com/stz",
+            None,
+        )
+        html = "<html><body><main>→ Elon Musk's Hushed FCC Filing. Sept 25th. (Ad)</main></body></html>"
+        client = NewsClient(article_excerpt_limit=1)
+
+        with patch("recovery_trader.integrations.news.urlopen", return_value=FakeResponse(html, "text/html")):
+            enriched = client.enrich_articles([article])
+
+        self.assertIsNone(enriched[0].excerpt)
+
     def test_enrich_articles_leaves_non_html_pages_headline_only(self) -> None:
         article = NewsArticle("TEST transcript", "Example News", "https://example.com/transcript.pdf", None)
         client = NewsClient(article_excerpt_limit=1)
@@ -104,11 +147,48 @@ class NewsClientTests(TestCase):
 
         self.assertIsNone(enriched[0].excerpt)
 
+    def test_enrich_articles_tries_following_candidates_until_three_succeed(self) -> None:
+        articles = [
+            NewsArticle(letter, "Example News", f"https://example.com/{letter.lower()}", None)
+            for letter in "ABCDEF"
+        ]
+        excerpts = {"B": "Excerpt B", "D": "Excerpt D", "E": "Excerpt E", "F": "Excerpt F"}
+        client = NewsClient(article_excerpt_limit=3)
+
+        def enrich(article: NewsArticle) -> NewsArticle:
+            return NewsArticle(
+                article.title,
+                article.publisher,
+                article.url,
+                article.published_at,
+                excerpts.get(article.title),
+            )
+
+        with patch.object(client, "_enrich_article", side_effect=enrich) as mocked:
+            enriched = client.enrich_articles(articles)
+
+        self.assertEqual([article.excerpt for article in enriched], [None, "Excerpt B", None, "Excerpt D", "Excerpt E", None])
+        self.assertEqual(mocked.call_count, 5)
+        self.assertEqual({call.args[0].title for call in mocked.call_args_list}, set("ABCDE"))
+
+    def test_enrich_articles_stops_after_exhausting_candidates(self) -> None:
+        articles = [
+            NewsArticle(letter, "Example News", f"https://example.com/{letter.lower()}", None)
+            for letter in "ABCD"
+        ]
+        client = NewsClient(article_excerpt_limit=3)
+
+        with patch.object(client, "_enrich_article", side_effect=lambda article: article) as mocked:
+            enriched = client.enrich_articles(articles)
+
+        self.assertTrue(all(article.excerpt is None for article in enriched))
+        self.assertEqual(mocked.call_count, 4)
+
     def test_enrich_articles_resolves_google_news_url_before_reading_article(self) -> None:
         article = NewsArticle("TEST results", "Example News", "https://news.google.com/rss/articles/encoded-id?oc=5", None)
         metadata = '<html><body><div data-n-a-sg="signature" data-n-a-ts="12345"></div></body></html>'
         batch_response = ")]}'\n\n[[\"wrb.fr\",\"Fbv4je\",\"[\\\"garturlres\\\",\\\"https://example.com/results\\\",1]\"]]"
-        publisher_html = "<html><body><article><p>Resolved article content.</p></article></body></html>"
+        publisher_html = "<html><body><article><h1>TEST results</h1><p>Resolved article content.</p></article></body></html>"
         client = NewsClient(article_timeout=7, article_excerpt_limit=1, max_excerpt_chars=500)
 
         with patch(
@@ -122,5 +202,5 @@ class NewsClientTests(TestCase):
             enriched = client.enrich_articles([article])
 
         self.assertEqual(enriched[0].url, "https://example.com/results")
-        self.assertEqual(enriched[0].excerpt, "Resolved article content.")
+        self.assertEqual(enriched[0].excerpt, "TEST results Resolved article content.")
         self.assertEqual(mocked.call_count, 3)

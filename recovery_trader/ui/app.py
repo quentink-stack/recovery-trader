@@ -29,6 +29,12 @@ ROOT = Path(__file__).parents[2]
 SP500 = ROOT / "data" / "sp500.csv"
 SCREEN_DATA_VERSION = "day-two-signal-v1"
 MARKET_FEATURE_LAB_VERSION = "market-feature-outcomes-v2"
+RESEARCH_PIPELINE_VERSION = "headline-aligned-news-v1"
+RESEARCH_SESSION_KEYS = (
+    "ticker_research_context",
+    "ticker_research_report",
+    "ticker_research_status",
+)
 
 
 def format_elapsed(seconds: float) -> str:
@@ -110,6 +116,16 @@ def render_saved_research_status(slot: Any) -> None:
     if isinstance(error, str):
         prefix = f"{failed_stage}: " if isinstance(failed_stage, str) else ""
         status.error(f"{prefix}{error}")
+
+
+def refresh_stale_research_session() -> None:
+    """Discard saved evidence when its collection/validation pipeline changes."""
+    version_key = "ticker_research_pipeline_version"
+    if st.session_state.get(version_key) == RESEARCH_PIPELINE_VERSION:
+        return
+    for key in RESEARCH_SESSION_KEYS:
+        st.session_state.pop(key, None)
+    st.session_state[version_key] = RESEARCH_PIPELINE_VERSION
 
 st.set_page_config(page_title="Recovery Trader", page_icon="📉", layout="wide")
 
@@ -319,7 +335,7 @@ def market_feature_lab_page(min_drop: float) -> None:
         return
     sectors = sorted({item.sector for item in constituents if item.sector})
     if not sectors:
-        st.error("The S&P 500 file has no sector labels. Run `python refresh_sp500.py`, then reload this page.")
+        st.error("The S&P 500 file has no sector labels. Run `python -m scripts.refresh_sp500`, then reload this page.")
         return
 
     with st.form("market_feature_lab_controls"):
@@ -786,6 +802,7 @@ def _format_days_until(days: int | None) -> str:
 
 
 def ticker_research_section(minimum_drop_pct: float) -> None:
+    refresh_stale_research_session()
     st.header("Ticker research")
     st.caption("Combines recent market data, SEC evidence, and bounded readable news excerpts, then asks the local Qwen3 model for a structured, evidence-grounded assessment.")
     ticker = st.text_input("Ticker to research", placeholder="e.g. AAPL").strip().upper()
