@@ -1,7 +1,7 @@
 from unittest import TestCase
 from unittest.mock import patch
 
-from recovery_trader.integrations.news import NewsArticle, NewsClient, NewsError
+from recovery_trader.integrations.news import NewsArticle, NewsClient, NewsError, _select_relevant_excerpt
 
 
 class FakeResponse:
@@ -26,6 +26,18 @@ RSS = """<?xml version="1.0"?><rss><channel>
 
 
 class NewsClientTests(TestCase):
+    def test_equal_relevance_scores_preserve_heading_first_candidate(self) -> None:
+        heading_candidate = "Nike bottomed out after its recent decline. This is the article body."
+        longer_candidate = f"{heading_candidate} Unrelated recommendations follow after the story."
+
+        selected = _select_relevant_excerpt(
+            (heading_candidate, longer_candidate),
+            500,
+            headline="Nike bottomed out - Example News",
+        )
+
+        self.assertEqual(selected, heading_candidate)
+
     def test_recent_articles_parses_articles_and_limits_results(self) -> None:
         client = NewsClient(timeout=7)
 

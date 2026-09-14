@@ -406,7 +406,7 @@ def _excerpt_relevance_score(excerpt: str, headline: str) -> float | None:
 
     if not exact_headline and (len(excerpt) < 120 or overlap < 2):
         return None
-    return (100 if exact_headline else 0) + overlap * 10 + min(len(excerpt), 3_000) / 3_000
+    return (100 if exact_headline else 0) + overlap * 10
 
 
 def _sanitize_article_text(text: str, *, headline: str = "") -> str:
