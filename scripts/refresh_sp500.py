@@ -10,7 +10,8 @@ from urllib.request import Request, urlopen
 
 
 SOURCE_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-DESTINATION = Path(__file__).parent / "data" / "sp500.csv"
+ROOT = Path(__file__).resolve().parents[1]
+DESTINATION = ROOT / "data" / "sp500.csv"
 
 
 class ConstituentsTableParser(HTMLParser):

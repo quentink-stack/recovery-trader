@@ -1,7 +1,7 @@
 from unittest import TestCase
 from unittest.mock import patch
 
-from refresh_sp500 import fetch_constituents
+from scripts.refresh_sp500 import fetch_constituents
 
 
 class _FakeResponse:
@@ -30,7 +30,7 @@ class RefreshSp500Tests(TestCase):
             f"{rows}</table>"
         ).encode("utf-8")
 
-        with patch("refresh_sp500.urlopen", return_value=_FakeResponse(document)):
+        with patch("scripts.refresh_sp500.urlopen", return_value=_FakeResponse(document)):
             constituents = fetch_constituents()
 
         self.assertEqual(len(constituents), 500)

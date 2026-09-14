@@ -335,7 +335,7 @@ def market_feature_lab_page(min_drop: float) -> None:
         return
     sectors = sorted({item.sector for item in constituents if item.sector})
     if not sectors:
-        st.error("The S&P 500 file has no sector labels. Run `python refresh_sp500.py`, then reload this page.")
+        st.error("The S&P 500 file has no sector labels. Run `python -m scripts.refresh_sp500`, then reload this page.")
         return
 
     with st.form("market_feature_lab_controls"):

@@ -22,7 +22,7 @@ from recovery_trader.research.market_feature_lab import (
     select_sector_sample,
 )
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def validated_bars(bars: list[DailyBar], start: date, end: date) -> list[DailyBar]:

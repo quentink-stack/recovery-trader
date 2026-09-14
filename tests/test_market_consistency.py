@@ -5,9 +5,9 @@ from unittest import TestCase
 
 import pandas as pd
 
-from analyze_market_consistency import build_trades, prepare_cohort, run_analysis, summarize
 from recovery_trader.domain.market import DailyBar
 from recovery_trader.research.consistency import net_return_pct, simulate_exit
+from scripts.analyze_market_consistency import build_trades, prepare_cohort, run_analysis, summarize
 
 
 def bar(index, opening=100, close=100, low=None, high=None):

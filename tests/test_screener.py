@@ -1,8 +1,8 @@
 from datetime import date
 from unittest import TestCase
 
-from alpaca import DailyBar
-from screener import WatchlistItem, latest_large_drop
+from recovery_trader.domain.market import DailyBar
+from recovery_trader.domain.screener import WatchlistItem, latest_large_drop
 
 
 class DropResearchTests(TestCase):

@@ -50,7 +50,7 @@ $env:OLLAMA_TEMPERATURE = 0.15
 
 `OLLAMA_TIMEOUT` is measured in seconds and defaults to 420 (seven minutes). A temperature of `0.15` favors repeatable, evidence-grounded structured reports while preserving Qwen's reasoning mode. Restart Streamlit after changing any Ollama environment variable.
 
-The reusable client is in `ollama_client.py`. It provides `is_available()` for a health check and `generate()` for non-streaming model responses. JSON mode is enabled by default for the structured research report planned below.
+The reusable client is in `recovery_trader/integrations/ollama.py`. It provides `is_available()` for a health check and `generate()` for non-streaming model responses. JSON mode is enabled by default for the structured research report planned below.
 
 The first research data source is the public Google News RSS search feed. For each ticker-research request, Recovery Trader considers articles in feed order, resolves Google News wrappers to their publisher URLs, and continues through the candidates until it extracts three readable, bounded excerpts or exhausts the returned articles. The RSS feed fetch has a 30-second default timeout; publisher-resolution and article-processing fetches each have a 12-second timeout, and article downloads have a 1 MB limit. Inaccessible, paywalled, non-HTML, blocked, or unresolved pages remain headline-only without failing research. The Qwen prompt includes the excerpt when available, alongside the title, publisher, and publication timestamp; resolved source links remain clickable in the app but are not sent to Qwen. No additional API key is required.
 
@@ -67,7 +67,7 @@ The drop screener defaults to the locally stored S&P 500 universe in `data/sp500
 Refresh the local constituent list deliberately when needed:
 
 ```powershell
-python refresh_sp500.py
+python -m scripts.refresh_sp500
 ```
 
 The refresh script reads the constituent table from Wikipedia and writes each symbol, company, and GICS sector into `data/sp500.csv`. Review the generated change before committing it; index membership and sector classifications change over time.
@@ -77,7 +77,7 @@ The refresh script reads the constituent table from Wikipedia and writes each sy
 To export the analysis without opening Streamlit, run:
 
 ```powershell
-python export_market_analysis.py --days 730 --min-drop 5
+python -m scripts.export_market_analysis --days 730 --min-drop 5
 ```
 
 This uses all constituents in the saved universe and your existing `config/alpaca.ini` credentials.
@@ -100,7 +100,7 @@ Results include sector comparisons, feature-range comparisons, individual event 
 Analyze an existing export without new Alpaca requests or Qwen calls:
 
 ```powershell
-python analyze_market_consistency.py exports/market-analysis-20260909-152502-884305
+python -m scripts.analyze_market_consistency exports/market-analysis-20260909-152502-884305
 ```
 
 Replace the directory with your export. A new ignored `exports/consistency-.../`
