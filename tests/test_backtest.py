@@ -1,7 +1,8 @@
 from datetime import date
 from unittest import TestCase
 
-from backtest import DailyBar, Strategy, run_strategy
+from recovery_trader.domain.backtest import Strategy, run_strategy
+from recovery_trader.domain.market import DailyBar
 
 
 class BacktestStrategyTests(TestCase):

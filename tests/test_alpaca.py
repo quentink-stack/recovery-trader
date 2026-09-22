@@ -1,7 +1,7 @@
 from datetime import date
 from unittest import TestCase
 
-from alpaca import AlpacaMarketData
+from recovery_trader.integrations.alpaca import AlpacaMarketData
 
 
 class AlpacaBatchBarsTests(TestCase):
