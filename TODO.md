@@ -42,6 +42,13 @@ inactive until they are validated and explicitly approved.
 - [ ] Add market-volume features only after confirming a consistent source and
   adjustment policy: signal-day relative volume, follow-through volume, and
   average dollar volume / liquidity.
+- [x] Match large-drop events by period, sector, raw drop magnitude, and bounded
+  calendar distance. Extreme sector underperformance remained weaker, but only
+  243 of 508 extreme events matched and recent bootstrap ranges stayed wide.
+- [ ] Freeze the extreme sector-relative cutoff and matching rules, then collect
+  prospective or genuinely unseen events before allowing this risk indicator to
+  receive a deterministic recovery-score contribution. Qwen now receives it as
+  explicitly constrained 40%-confidence risk context only.
 - [ ] Keep macro, regulation, and sentiment neutral unless a dedicated,
   time-stamped source is actually supplied for that category.
 - [ ] Decide whether the expected next earnings date should become an explicit

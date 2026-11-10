@@ -118,13 +118,31 @@ class ResearchContextTests(TestCase):
         self.assertAlmostEqual(context.market_features.excess_drop_vs_spy_pct, -9.0)
         self.assertAlmostEqual(context.market_features.sector_return_pct, -1.5)
         self.assertAlmostEqual(context.market_features.excess_drop_vs_sector_pct, -8.5)
-        self.assertNotIn("market_features", context.to_payload())
+        payload = context.to_payload()
+        self.assertNotIn("market_features", payload)
+        self.assertEqual(
+            payload["drop_scope"],
+            {
+                "signal_day": "2026-07-22",
+                "stock_return_pct": -10.0,
+                "spy_return_pct": -1.0,
+                "excess_vs_spy_pct": -9.0,
+                "sector": "Information Technology",
+                "sector_benchmark": "XLK",
+                "sector_return_pct": -1.5,
+                "excess_vs_sector_pct": -8.5,
+                "extreme_company_specific_risk": True,
+                "extreme_cutoff_pct_points": -7.3542,
+                "predictive_confidence_percent": 40,
+            },
+        )
 
     def test_empty_bars_leave_market_context_empty(self) -> None:
         context = build_research_context("TEST", [], [])
 
         self.assertIsNone(context.market)
         self.assertEqual(context.to_payload()["market"], None)
+        self.assertNotIn("drop_scope", context.to_payload())
 
     def test_service_collects_market_and_news_evidence(self) -> None:
         class FakeMarketData:

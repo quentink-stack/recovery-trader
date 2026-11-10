@@ -19,6 +19,12 @@ GICS_SECTOR_ETFS = {
     "Utilities": "XLU",
 }
 
+# Frozen from the older-period first quartile in the November 10, 2026
+# sector-relative experiment. This is an exploratory risk boundary, not a
+# validated probability or a positive recovery signal.
+EXTREME_SECTOR_EXCESS_CUTOFF_PP = -7.354168958370034
+SECTOR_RELATIVE_PREDICTIVE_CONFIDENCE = 40
+
 
 def sector_benchmark_for_ticker(
     ticker: str,

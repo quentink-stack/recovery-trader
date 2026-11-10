@@ -3,7 +3,7 @@
 Start here when resuming strategy research. This index and the dated experiment
 folders preserve the findings independently of a chat session.
 
-## Current state — September 9, 2026
+## Current state — November 10, 2026
 
 The original hypothesis is that some sharp one-session declines overreact to
 news, creating a recovery opportunity. Our current dataset tests **all qualifying
@@ -16,14 +16,34 @@ It is an exploratory candidate, not a validated strategy. It did not change the
 app or Qwen scoring. No unseen-data validation or portfolio simulation has been
 completed for this candidate.
 
+The sector-relative experiment found that the most company-specific quartile
+was the weakest group in both reused periods, but the least-negative quartile's
+strong older performance did not reproduce recently. Absolute drop magnitude
+and sector-wide decline severity differ substantially across the groups, so the
+result is a risk signal for further testing—not an approved score rule.
+
+A post-hoc same-sector match kept raw stock declines within one percentage
+point and preserved the adverse direction: extreme company-specific drops had
+lower 20/30-session medians and recovery rates in both periods. Only 243 of 508
+extreme events matched, and recent uncertainty remained wide, so this raises the
+indicator to a promising risk flag but still does not authorize scoring.
+
 ## Approved application decisions
 
-- **November 10, 2026 — sector-relative preview only:** Ticker research for a
+- **November 10, 2026 — sector-relative risk context for Qwen:** The user
+  explicitly approved sending the compact stock/SPY/sector drop comparison,
+  frozen `-7.3542`-point extreme-risk boundary, and 40% predictive confidence
+  to Qwen. Prompt rules make the signal asymmetric: an extreme flag may support
+  a negative market conclusion only with independent corroboration, while a
+  non-extreme value cannot support a positive rating. The indicator adds no
+  evidence coverage, category weight, or deterministic score adjustment, but
+  it can affect the existing market assessment under those constraints.
+- **November 10, 2026 — sector-relative preview only (superseded):** Ticker research for a
   saved S&P 500 constituent compares the signal-day stock decline with both SPY
   and the corresponding GICS sector ETF. The sector-relative value remains an
-  inspection-only market feature: it is not sent to Qwen and does not change
-  evidence coverage or recovery scoring. Non-constituents remain without an
-  inferred sector benchmark rather than receiving a guessed classification.
+  inspection-only market feature. This evidence boundary was superseded by the
+  later explicit decision above. Non-constituents remain without an inferred
+  sector benchmark rather than receiving a guessed classification.
 - **November 10, 2026 — readable news only:** Headline-only discoveries remain
   visible as research leads but are excluded from the Qwen payload, news
   evidence coverage, and recovery-score contribution. News coverage now uses
@@ -37,6 +57,8 @@ completed for this candidate.
 
 | Record | Status | Main finding |
 |---|---|---|
+| [2026-11-10: Raw-drop-matched sector-relative outcomes](experiments/2026-11-10-sector-relative-matched-drops/README.md) | Post-hoc exploratory; all outcomes already inspected | Extreme drops remained weaker after same-sector raw-drop matching, but match coverage and recent precision are insufficient for scoring. |
+| [2026-11-10: Sector-relative drops](experiments/2026-11-10-sector-relative-drops/README.md) | Exploratory; data already inspected | Extreme company-specific drops were weakest; no stable monotonic rule, with raw-drop severity confounding the groups. |
 | [2026-09-09: Recovery exits](experiments/2026-09-09-recovery-exits/README.md) | Exploratory; data already inspected | Recovery exits looked steadier by median/win rate; large losses and lower mean returns remain. |
 
 The [detailed findings](../docs/market-consistency-findings.md) explain the first
