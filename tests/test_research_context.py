@@ -41,29 +41,8 @@ class ResearchContextTests(TestCase):
         self.assertNotIn("market_features", context.to_payload())
         self.assertNotIn("earnings", context.to_payload())
 
-    def test_qwen_payload_excludes_headline_only_news(self) -> None:
-        readable = NewsArticle(
-            "Readable report",
-            "Publisher A",
-            "https://example.com/readable",
-            datetime(2026, 8, 24, 12, tzinfo=timezone.utc),
-            "Validated article evidence.",
-        )
-        headline_only = NewsArticle(
-            "Unverified headline",
-            "Publisher B",
-            "https://example.com/headline",
-            datetime(2026, 8, 24, 13, tzinfo=timezone.utc),
-        )
-
-        context = build_research_context("TEST", [], [headline_only, readable], as_of=date(2026, 8, 24))
-
-        self.assertEqual(context.news, (headline_only, readable))
-        self.assertEqual(context.readable_news, (readable,))
-        self.assertEqual([item["title"] for item in context.to_payload()["news"]], ["Readable report"])
-
-    def test_qwen_payload_caps_readable_news_at_three(self) -> None:
-        articles = [
+    def test_qwen_payload_keeps_three_readable_articles_and_excludes_headlines(self) -> None:
+        readable = [
             NewsArticle(
                 f"Readable report {index}",
                 f"Publisher {index}",
@@ -73,11 +52,21 @@ class ResearchContextTests(TestCase):
             )
             for index in range(4)
         ]
+        headline_only = NewsArticle(
+            "Unverified headline",
+            "Publisher 4",
+            "https://example.com/headline",
+            datetime(2026, 8, 24, 13, tzinfo=timezone.utc),
+        )
 
-        context = build_research_context("TEST", [], articles, as_of=date(2026, 8, 24))
+        context = build_research_context("TEST", [], [headline_only, *readable], as_of=date(2026, 8, 24))
 
+        self.assertEqual(context.news, (headline_only, *readable))
         self.assertEqual(len(context.readable_news), 3)
-        self.assertEqual(len(context.to_payload()["news"]), 3)
+        self.assertEqual(
+            [item["title"] for item in context.to_payload()["news"]],
+            ["Readable report 0", "Readable report 1", "Readable report 2"],
+        )
 
     def test_service_batches_ticker_and_spy_for_market_feature_preview(self) -> None:
         class FakeMarketData:

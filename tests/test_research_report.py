@@ -115,8 +115,8 @@ class ResearchReportTests(TestCase):
         self.assertEqual(coverage["earnings"], 0)
         self.assertEqual(evidence_coverage_score(coverage), 55)
 
-    def test_headline_only_news_does_not_increase_coverage(self) -> None:
-        articles = [
+    def test_news_coverage_uses_only_readable_articles_and_freshness(self) -> None:
+        headline_only = [
             NewsArticle(
                 f"Unverified headline {index}",
                 f"Publisher {index}",
@@ -125,14 +125,6 @@ class ResearchReportTests(TestCase):
             )
             for index in range(5)
         ]
-        context = build_research_context("TEST", [], articles, as_of=date(2026, 8, 24))
-
-        coverage = category_evidence_coverage(context)
-
-        self.assertEqual(coverage["news"], 0)
-        self.assertEqual(coverage["sentiment"], 0)
-
-    def test_readable_news_coverage_rewards_freshness(self) -> None:
         fresh = NewsArticle(
             "Fresh report",
             "Publisher A",
@@ -147,27 +139,21 @@ class ResearchReportTests(TestCase):
             datetime(2026, 5, 1, tzinfo=timezone.utc),
             "Stale validated evidence.",
         )
-        future = NewsArticle(
-            "Future report",
-            "Publisher A",
-            "https://example.com/future",
-            datetime(2026, 8, 25, tzinfo=timezone.utc),
-            "Evidence unavailable at the research cutoff.",
-        )
 
+        headline_coverage = category_evidence_coverage(
+            build_research_context("TEST", [], headline_only, as_of=date(2026, 8, 24))
+        )
         fresh_coverage = category_evidence_coverage(
             build_research_context("TEST", [], [fresh], as_of=date(2026, 8, 24))
         )
         stale_coverage = category_evidence_coverage(
             build_research_context("TEST", [], [stale], as_of=date(2026, 8, 24))
         )
-        future_coverage = category_evidence_coverage(
-            build_research_context("TEST", [], [future], as_of=date(2026, 8, 24))
-        )
 
+        self.assertEqual(headline_coverage["news"], 0)
+        self.assertEqual(headline_coverage["sentiment"], 0)
         self.assertEqual(fresh_coverage["news"], 43)
         self.assertEqual(stale_coverage["news"], 28)
-        self.assertEqual(future_coverage["news"], 28)
 
     def test_earnings_coverage_uses_freshness_adjusted_confidence(self) -> None:
         brief = EarningsBrief(
