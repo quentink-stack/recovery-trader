@@ -16,6 +16,17 @@ It is an exploratory candidate, not a validated strategy. It did not change the
 app or Qwen scoring. No unseen-data validation or portfolio simulation has been
 completed for this candidate.
 
+## Approved application decisions
+
+- **November 10, 2026 — readable news only:** Headline-only discoveries remain
+  visible as research leads but are excluded from the Qwen payload, news
+  evidence coverage, and recovery-score contribution. News coverage now uses
+  validated excerpt count (60%), distinct readable publishers (25%), and
+  readable-article freshness (15%). Three recent excerpts from three publishers
+  provide full news coverage; undated or older excerpts receive less freshness
+  credit. This is an approved evidence-quality rule, not an experimental return
+  finding.
+
 ## Experiments
 
 | Record | Status | Main finding |

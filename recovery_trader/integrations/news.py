@@ -55,6 +55,7 @@ class _ArticleTextParser(HTMLParser):
     _IGNORED_TAGS = {"script", "style", "noscript", "svg", "template", "iframe", "form", "nav", "footer", "aside", "dialog", "select", "option"}
     _IGNORED_ROLES = {"navigation", "banner", "contentinfo", "complementary", "search", "dialog"}
     _IGNORED_CONTAINER_HINTS = {"cookie", "consent", "language", "locale", "navbar", "navigation", "sidebar", "subscribe", "signup", "login"}
+    _DESCRIPTION_META_KEYS = {"description", "og:description", "twitter:description"}
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -67,9 +68,22 @@ class _ArticleTextParser(HTMLParser):
         self._main_chunks: list[str] = []
         self._body_chunks: list[str] = []
         self._body_heading_starts: list[int] = []
+        self._description_candidates: list[str] = []
+        self._json_ld_documents: list[str] = []
+        self._json_ld_chunks: list[str] | None = None
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         normalized = tag.lower()
+        attributes = {name.lower(): (value or "") for name, value in attrs}
+        if normalized == "meta":
+            key = (attributes.get("property") or attributes.get("name", "")).lower()
+            content = attributes.get("content", "").strip()
+            if key in self._DESCRIPTION_META_KEYS and content:
+                self._description_candidates.append(content)
+            return
+        if normalized == "script" and "ld+json" in attributes.get("type", "").lower():
+            self._json_ld_chunks = []
+            return
         if normalized in self._IGNORED_TAGS or self._is_ignored_container(attrs):
             self._ignored_elements.append(normalized)
         elif normalized == "article":
@@ -85,6 +99,12 @@ class _ArticleTextParser(HTMLParser):
 
     def handle_endtag(self, tag: str) -> None:
         normalized = tag.lower()
+        if normalized == "script" and self._json_ld_chunks is not None:
+            document = "".join(self._json_ld_chunks).strip()
+            if document:
+                self._json_ld_documents.append(document)
+            self._json_ld_chunks = None
+            return
         if self._ignored_elements and normalized == self._ignored_elements[-1]:
             self._ignored_elements.pop()
         elif normalized == "article" and self._article_depth:
@@ -97,6 +117,9 @@ class _ArticleTextParser(HTMLParser):
             self._body_depth -= 1
 
     def handle_data(self, data: str) -> None:
+        if self._json_ld_chunks is not None:
+            self._json_ld_chunks.append(data)
+            return
         text = " ".join(data.split())
         if not text or self._ignored_elements:
             return
@@ -122,6 +145,8 @@ class _ArticleTextParser(HTMLParser):
             candidates.append(" ".join(self._article_chunks))
         if self._main_chunks:
             candidates.append(" ".join(self._main_chunks))
+        candidates.extend(_json_ld_text_candidates(self._json_ld_documents))
+        candidates.extend(self._description_candidates)
         if self._body_chunks:
             candidates.append(" ".join(self._body_chunks))
         return tuple(dict.fromkeys(candidate for candidate in candidates if candidate))
@@ -134,6 +159,44 @@ class _ArticleTextParser(HTMLParser):
             return True
         descriptor = f"{attributes.get('class', '')} {attributes.get('id', '')}".lower()
         return any(hint in descriptor for hint in self._IGNORED_CONTAINER_HINTS)
+
+
+def _json_ld_text_candidates(documents: list[str]) -> tuple[str, ...]:
+    """Return article bodies and descriptions from bounded JSON-LD documents."""
+    candidates: list[str] = []
+
+    def visit(value: object) -> None:
+        if isinstance(value, list):
+            for item in value:
+                visit(item)
+            return
+        if not isinstance(value, dict):
+            return
+
+        article_body = value.get("articleBody")
+        if isinstance(article_body, str) and article_body.strip():
+            candidates.append(article_body.strip())
+
+        schema_type = value.get("@type")
+        schema_types = [schema_type] if isinstance(schema_type, str) else schema_type
+        is_article = isinstance(schema_types, list) and any(
+            isinstance(item, str) and (item.lower().endswith("article") or item.lower().endswith("posting"))
+            for item in schema_types
+        )
+        description = value.get("description")
+        if is_article and isinstance(description, str) and description.strip():
+            candidates.append(description.strip())
+
+        for nested in value.values():
+            if isinstance(nested, (dict, list)):
+                visit(nested)
+
+    for document in documents:
+        try:
+            visit(json.loads(document))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+    return tuple(dict.fromkeys(candidates))
 
 
 class _GoogleNewsMetadataParser(HTMLParser):

@@ -26,6 +26,19 @@ class OllamaClientTests(TestCase):
         self.assertEqual(config.model, "qwen3:14b")
         self.assertEqual(config.timeout, 420)
         self.assertEqual(config.temperature, 0.15)
+        self.assertEqual(config.num_ctx, 8192)
+        self.assertEqual(config.response_reserve, 3000)
+
+    def test_context_budget_can_be_configured_from_environment(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {"OLLAMA_NUM_CTX": "16384", "OLLAMA_RESPONSE_RESERVE": "4096"},
+            clear=True,
+        ):
+            config = OllamaConfig.from_environment()
+
+        self.assertEqual(config.num_ctx, 16384)
+        self.assertEqual(config.response_reserve, 4096)
 
     def test_generate_uses_configured_model_and_json_format(self) -> None:
         client = OllamaClient(OllamaConfig("http://ollama.test", "test-model", 10))
@@ -42,7 +55,7 @@ class OllamaClientTests(TestCase):
                 "model": "test-model",
                 "prompt": "Research TEST",
                 "stream": False,
-                "options": {"temperature": 0.15},
+                "options": {"temperature": 0.15, "num_ctx": 8192},
                 "format": "json",
             },
         )

@@ -16,6 +16,8 @@ class OllamaConfig:
     model: str = "qwen3:14b"
     timeout: int = 420
     temperature: float = 0.15
+    num_ctx: int = 8192
+    response_reserve: int = 3000
 
     @classmethod
     def from_environment(cls) -> "OllamaConfig":
@@ -24,6 +26,8 @@ class OllamaConfig:
             os.getenv("OLLAMA_MODEL", cls.model),
             int(os.getenv("OLLAMA_TIMEOUT", str(cls.timeout))),
             float(os.getenv("OLLAMA_TEMPERATURE", str(cls.temperature))),
+            int(os.getenv("OLLAMA_NUM_CTX", str(cls.num_ctx))),
+            int(os.getenv("OLLAMA_RESPONSE_RESERVE", str(cls.response_reserve))),
         )
 
 
@@ -64,7 +68,10 @@ class OllamaClient:
             "model": self.config.model,
             "prompt": prompt,
             "stream": False,
-            "options": {"temperature": self.config.temperature},
+            "options": {
+                "temperature": self.config.temperature,
+                "num_ctx": self.config.num_ctx,
+            },
         }
         if json_response:
             payload["format"] = response_schema or "json"
