@@ -7,7 +7,7 @@ from recovery_trader.domain.market import DailyBar
 from recovery_trader.integrations.news import NewsArticle
 from recovery_trader.research.context import EarningsEvidence, build_research_context
 from recovery_trader.research.earnings import EarningsBrief, PeriodAlignment
-from recovery_trader.research.report import REPORT_RESPONSE_SCHEMA, build_prompt, category_evidence_coverage, evidence_coverage_score, generate_report, parse_report
+from recovery_trader.research.report import REPORT_RESPONSE_SCHEMA, build_prompt, category_evidence_coverage, estimate_prompt_budget, evidence_coverage_score, generate_report, parse_report
 
 
 class ResearchReportTests(TestCase):
@@ -33,7 +33,26 @@ class ResearchReportTests(TestCase):
 
         self.assertIn('"ticker": "TEST"', prompt)
         self.assertIn("Return JSON only", prompt)
-        self.assertIn("TEST earnings", prompt)
+        self.assertNotIn("TEST earnings", prompt)
+        self.assertIn('"news": []', prompt)
+
+    def test_prompt_budget_reserves_reasoning_and_output_capacity(self) -> None:
+        budget = estimate_prompt_budget("x" * 4_000, num_ctx=8_192, response_reserve=3_000)
+
+        self.assertEqual(budget.prompt_chars, 4_000)
+        self.assertEqual(budget.estimated_prompt_tokens, 1_000)
+        self.assertEqual(budget.safe_input_headroom, 4_192)
+        self.assertFalse(budget.exceeds_safe_budget)
+
+    def test_prompt_budget_warns_when_reserve_would_be_consumed(self) -> None:
+        budget = estimate_prompt_budget("x" * 24_000, num_ctx=8_192, response_reserve=3_000)
+
+        self.assertEqual(budget.estimated_prompt_tokens, 6_000)
+        self.assertEqual(budget.safe_input_headroom, -808)
+        self.assertTrue(budget.exceeds_safe_budget)
+
+        with self.assertRaises(ValueError):
+            estimate_prompt_budget("prompt", num_ctx=4_096, response_reserve=4_096)
 
     def test_report_is_validated_and_score_is_calculated(self) -> None:
         payload = self.report_payload("positive")
@@ -65,7 +84,7 @@ class ResearchReportTests(TestCase):
         report = generate_report(self.context, client, on_stage=stages.append)
 
         self.assertEqual(report.recovery_score, 50)
-        self.assertEqual(report.evidence_coverage, 6)
+        self.assertEqual(report.evidence_coverage, 3)
         client.generate.assert_called_once()
         self.assertTrue(client.generate.call_args.kwargs["json_response"])
         self.assertEqual(client.generate.call_args.kwargs["response_schema"], REPORT_RESPONSE_SCHEMA)
@@ -95,6 +114,60 @@ class ResearchReportTests(TestCase):
         self.assertEqual(coverage["sentiment"], 50)
         self.assertEqual(coverage["earnings"], 0)
         self.assertEqual(evidence_coverage_score(coverage), 55)
+
+    def test_headline_only_news_does_not_increase_coverage(self) -> None:
+        articles = [
+            NewsArticle(
+                f"Unverified headline {index}",
+                f"Publisher {index}",
+                f"https://example.com/{index}",
+                datetime(2026, 8, 24, tzinfo=timezone.utc),
+            )
+            for index in range(5)
+        ]
+        context = build_research_context("TEST", [], articles, as_of=date(2026, 8, 24))
+
+        coverage = category_evidence_coverage(context)
+
+        self.assertEqual(coverage["news"], 0)
+        self.assertEqual(coverage["sentiment"], 0)
+
+    def test_readable_news_coverage_rewards_freshness(self) -> None:
+        fresh = NewsArticle(
+            "Fresh report",
+            "Publisher A",
+            "https://example.com/fresh",
+            datetime(2026, 8, 24, tzinfo=timezone.utc),
+            "Fresh validated evidence.",
+        )
+        stale = NewsArticle(
+            "Stale report",
+            "Publisher A",
+            "https://example.com/stale",
+            datetime(2026, 5, 1, tzinfo=timezone.utc),
+            "Stale validated evidence.",
+        )
+        future = NewsArticle(
+            "Future report",
+            "Publisher A",
+            "https://example.com/future",
+            datetime(2026, 8, 25, tzinfo=timezone.utc),
+            "Evidence unavailable at the research cutoff.",
+        )
+
+        fresh_coverage = category_evidence_coverage(
+            build_research_context("TEST", [], [fresh], as_of=date(2026, 8, 24))
+        )
+        stale_coverage = category_evidence_coverage(
+            build_research_context("TEST", [], [stale], as_of=date(2026, 8, 24))
+        )
+        future_coverage = category_evidence_coverage(
+            build_research_context("TEST", [], [future], as_of=date(2026, 8, 24))
+        )
+
+        self.assertEqual(fresh_coverage["news"], 43)
+        self.assertEqual(stale_coverage["news"], 28)
+        self.assertEqual(future_coverage["news"], 28)
 
     def test_earnings_coverage_uses_freshness_adjusted_confidence(self) -> None:
         brief = EarningsBrief(

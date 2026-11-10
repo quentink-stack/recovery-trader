@@ -22,14 +22,22 @@ from recovery_trader.research.market_feature_lab import (
     chronological_evaluation_periods,
     select_sector_sample,
 )
-from recovery_trader.research.report import CATEGORY_WEIGHTS, ResearchReport, generate_report
+from recovery_trader.research.report import (
+    CATEGORY_WEIGHTS,
+    PromptBudget,
+    ResearchReport,
+    build_prompt,
+    estimate_prompt_budget,
+    generate_report,
+)
 from recovery_trader.research.service import ResearchService
 
 ROOT = Path(__file__).parents[2]
 SP500 = ROOT / "data" / "sp500.csv"
 SCREEN_DATA_VERSION = "day-two-signal-v1"
 MARKET_FEATURE_LAB_VERSION = "market-feature-outcomes-v2"
-RESEARCH_PIPELINE_VERSION = "headline-aligned-news-v1"
+NEWS_CLIENT_VERSION = "metadata-fallback-v1"
+RESEARCH_PIPELINE_VERSION = "readable-news-only-v3"
 RESEARCH_SESSION_KEYS = (
     "ticker_research_context",
     "ticker_research_report",
@@ -70,6 +78,19 @@ class ResearchProgress:
         label = f"Research complete for {self.ticker}"
         self.status.update(label=label, state="complete", expanded=False)
         self._save(state="complete", label=label)
+
+    def show_prompt_budget(self, budget: PromptBudget) -> None:
+        """Show the estimated model context budget before generation starts."""
+        message = (
+            f"Prompt budget: {budget.prompt_chars:,} characters · "
+            f"~{budget.estimated_prompt_tokens:,}/{budget.context_tokens:,} tokens · "
+            f"{budget.response_reserve_tokens:,} reserved for reasoning/output · "
+            f"safe input headroom {budget.safe_input_headroom:+,} tokens"
+        )
+        if budget.exceeds_safe_budget:
+            self.status.warning(message)
+        else:
+            self.status.write(message)
 
     def fail(self, message: str) -> None:
         stage = self.active_stage or "Research"
@@ -136,7 +157,7 @@ def client() -> AlpacaMarketData:
 
 
 @st.cache_resource
-def news_client() -> NewsClient:
+def news_client(version: str) -> NewsClient:
     return NewsClient()
 
 
@@ -154,9 +175,18 @@ def research_service() -> ResearchService:
     try:
         configured_client = SecEdgarClient.from_config()
         sec_client = sec_edgar_client(configured_client.user_agent, configured_client.timeout)
-        return ResearchService(client(), news_client(), sec_client=sec_client)
+        return ResearchService(client(), news_client(NEWS_CLIENT_VERSION), sec_client=sec_client)
     except ValueError as exc:
-        return ResearchService(client(), news_client(), sec_setup_error=str(exc))
+        return ResearchService(client(), news_client(NEWS_CLIENT_VERSION), sec_setup_error=str(exc))
+
+
+def research_prompt_budget(context: ResearchContext, model_client: OllamaClient) -> PromptBudget:
+    """Estimate the current Qwen prompt against the configured context window."""
+    return estimate_prompt_budget(
+        build_prompt(context),
+        num_ctx=model_client.config.num_ctx,
+        response_reserve=model_client.config.response_reserve,
+    )
 
 
 @st.cache_data(ttl="15m", max_entries=16, show_spinner=False)
@@ -673,9 +703,26 @@ def display_earnings_preview(earnings: EarningsEvidence | None) -> None:
 
 def display_qwen_evidence_preview(context: ResearchContext) -> None:
     """Show the exact current evidence boundary sent to Qwen."""
+    budget = research_prompt_budget(context, ollama_client())
     with st.container(border=True):
         st.subheader("Qwen prompt data")
-        st.caption("The current JSON below is serialized inside the Qwen prompt exactly as shown.")
+        st.caption(
+            f"The current JSON below is serialized inside the Qwen prompt exactly as shown. "
+            f"It contains {len(context.readable_news)} validated news excerpt(s); headline-only discoveries are excluded."
+        )
+        budget_columns = st.columns(4)
+        budget_columns[0].metric("Prompt characters", f"{budget.prompt_chars:,}")
+        budget_columns[1].metric("Estimated prompt tokens", f"~{budget.estimated_prompt_tokens:,}")
+        budget_columns[2].metric("Context window", f"{budget.context_tokens:,}")
+        budget_columns[3].metric("Safe input headroom", f"{budget.safe_input_headroom:+,}")
+        budget_message = (
+            f"The estimate uses four characters per token and reserves "
+            f"{budget.response_reserve_tokens:,} tokens for Qwen reasoning and JSON output."
+        )
+        if budget.exceeds_safe_budget:
+            st.warning(f"{budget_message} Reduce evidence or increase OLLAMA_NUM_CTX before relying on this report.")
+        else:
+            st.caption(budget_message)
         st.write("**Currently sent to Qwen**")
         st.json(context.to_payload(), expanded=False)
 
@@ -835,6 +882,7 @@ def ticker_research_section(minimum_drop_pct: float) -> None:
                     on_stage=progress.begin,
                 )
                 st.session_state["ticker_research_context"] = context
+                progress.show_prompt_budget(research_prompt_budget(context, model_client))
                 report = generate_report(context, model_client, on_stage=progress.begin)
                 st.session_state["ticker_research_report"] = report
                 progress.complete()
@@ -847,6 +895,7 @@ def ticker_research_section(minimum_drop_pct: float) -> None:
         model_client = ollama_client()
         progress = ResearchProgress(status_slot, context.ticker, ollama_timeout=model_client.config.timeout)
         try:
+            progress.show_prompt_budget(research_prompt_budget(context, model_client))
             report = generate_report(context, model_client, on_stage=progress.begin)
             st.session_state["ticker_research_report"] = report
             progress.complete()
@@ -866,9 +915,10 @@ def ticker_research_section(minimum_drop_pct: float) -> None:
             display_earnings_preview(context.earnings)
             st.write("**Sources**")
             if context.news:
+                qwen_news = set(context.readable_news)
                 for article in context.news:
                     published = article.published_at.date().isoformat() if article.published_at else "date unavailable"
-                    reading_status = "excerpt read by Qwen" if article.excerpt else "headline only"
+                    reading_status = "analyzed by Qwen" if article in qwen_news else "discovered, not analyzed"
                     st.markdown(f"- [{article.title}]({article.url}) · {article.publisher} · {published} · {reading_status}")
             else:
                 st.caption("No recent news articles were returned.")

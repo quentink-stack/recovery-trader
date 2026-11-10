@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass
 from datetime import date
 
 from recovery_trader.domain.market import DailyBar
-from recovery_trader.integrations.news import NewsArticle
+from recovery_trader.integrations.news import ARTICLE_EXCERPT_LIMIT, NewsArticle
 from recovery_trader.integrations.sec_edgar import CompanyProfile, EarningsFacts, EarningsRelease
 from recovery_trader.research.earnings import EarningsBrief, brief_to_payload
 from recovery_trader.research.market_features import MarketFeatures, build_market_features
@@ -60,6 +60,12 @@ class ResearchContext:
     market_bars: tuple[DailyBar, ...] = ()
     market_features: MarketFeatures | None = None
 
+    @property
+    def readable_news(self) -> tuple[NewsArticle, ...]:
+        """Return only articles with validated text that Qwen may analyze."""
+        readable = tuple(article for article in self.news if article.excerpt and article.excerpt.strip())
+        return readable[:ARTICLE_EXCERPT_LIMIT]
+
     def to_payload(self) -> dict:
         """Return JSON-serializable evidence for an Ollama prompt."""
         payload = {
@@ -73,7 +79,7 @@ class ResearchContext:
                     "published_at": article.published_at.isoformat() if article.published_at else None,
                     "excerpt": article.excerpt,
                 }
-                for article in self.news
+                for article in self.readable_news
             ],
         }
         if self.earnings is not None and self.earnings.brief is not None:

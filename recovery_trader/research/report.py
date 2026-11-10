@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
+from datetime import date
 from typing import Any, Callable
 
 from recovery_trader.integrations.news import ARTICLE_EXCERPT_LIMIT
@@ -101,13 +103,40 @@ class ResearchReport:
         return self.recovery_score
 
 
+@dataclass(frozen=True)
+class PromptBudget:
+    prompt_chars: int
+    estimated_prompt_tokens: int
+    context_tokens: int
+    response_reserve_tokens: int
+
+    @property
+    def safe_input_headroom(self) -> int:
+        """Additional estimated input tokens available while preserving the reserve."""
+        return self.context_tokens - self.response_reserve_tokens - self.estimated_prompt_tokens
+
+    @property
+    def exceeds_safe_budget(self) -> bool:
+        return self.safe_input_headroom < 0
+
+
+def estimate_prompt_budget(prompt: str, *, num_ctx: int, response_reserve: int) -> PromptBudget:
+    """Estimate prompt usage before generation using a conservative text ratio."""
+    if num_ctx < 1:
+        raise ValueError("Ollama context size must be positive.")
+    if response_reserve < 0 or response_reserve >= num_ctx:
+        raise ValueError("Ollama response reserve must be non-negative and smaller than the context size.")
+    estimated_tokens = math.ceil(len(prompt) / 4)
+    return PromptBudget(len(prompt), estimated_tokens, num_ctx, response_reserve)
+
+
 def build_prompt(context: ResearchContext) -> str:
     """Build a grounded prompt that limits the model to supplied evidence."""
     evidence = json.dumps(context.to_payload(), indent=2)
     return f"""You are a cautious equity research assistant. Analyze {context.ticker} using only the evidence below.
 Do not invent facts, events, prices, sources, or earnings information. If evidence is missing, say so in uncertainties.
 When an `earnings` object is present, its arithmetic, period alignment, sector exceptions, and confidence were calculated deterministically. Use its findings for direction, treat `evidence_confidence_percent` as strength rather than direction, and do not override excluded or non-comparable metrics.
-News records may include a bounded `excerpt` extracted from the linked public article. Treat excerpts as stronger evidence than headlines, but do not infer facts from a headline-only record or claim to have read an article whose excerpt is null.
+Every supplied news record contains a validated, bounded `excerpt` extracted from the linked public article. Analyze only that supplied text; do not infer details that are absent from it.
 The `score_categories` value is required. It must be one JSON object (not a list and not a wrapper) with exactly these six keys: market, earnings, news, macro, regulation, and sentiment. Include every required category even when evidence is unavailable; use a neutral rating and say that no relevant evidence was provided.
 Return JSON only, with exactly this shape:
 {{
@@ -160,16 +189,21 @@ def category_evidence_coverage(context: ResearchContext) -> dict[str, int]:
         market_coverage = min(100, round(context.market.bar_count / 20 * 100))
 
     news_coverage = 0
-    if context.news:
-        article_count = len(context.news)
-        distinct_publishers = len({article.publisher.strip().lower() for article in context.news if article.publisher.strip()})
-        dated_articles = sum(article.published_at is not None for article in context.news)
-        excerpt_count = sum(bool(article.excerpt) for article in context.news)
-        article_points = min(article_count / 5, 1) * 35
-        publisher_points = min(distinct_publishers / 3, 1) * 20
-        date_points = dated_articles / article_count * 10
-        excerpt_points = min(excerpt_count / min(article_count, ARTICLE_EXCERPT_LIMIT), 1) * 35
-        news_coverage = round(article_points + publisher_points + date_points + excerpt_points)
+    readable_news = context.readable_news
+    if readable_news:
+        article_count = len(readable_news)
+        distinct_publishers = len(
+            {article.publisher.strip().lower() for article in readable_news if article.publisher.strip()}
+        )
+        as_of = date.fromisoformat(context.as_of)
+        freshness = sum(
+            _news_freshness(article.published_at.date(), as_of) if article.published_at else 0
+            for article in readable_news
+        )
+        article_points = min(article_count / ARTICLE_EXCERPT_LIMIT, 1) * 60
+        publisher_points = min(distinct_publishers / ARTICLE_EXCERPT_LIMIT, 1) * 25
+        freshness_points = freshness / article_count * 15
+        news_coverage = round(article_points + publisher_points + freshness_points)
 
     return {
         "market": market_coverage,
@@ -179,6 +213,22 @@ def category_evidence_coverage(context: ResearchContext) -> dict[str, int]:
         "regulation": 0,
         "sentiment": round(news_coverage * 0.5),
     }
+
+
+def _news_freshness(published: date, as_of: date) -> float:
+    """Return a deterministic 0-1 recency factor for readable news."""
+    age_days = (as_of - published).days
+    if age_days < 0:
+        return 0.0
+    if age_days <= 7:
+        return 1.0
+    if age_days <= 14:
+        return 0.75
+    if age_days <= 30:
+        return 0.5
+    if age_days <= 60:
+        return 0.25
+    return 0.0
 
 
 def evidence_coverage_score(category_coverage: dict[str, int]) -> int:

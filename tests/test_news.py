@@ -107,6 +107,47 @@ class NewsClientTests(TestCase):
 
         self.assertEqual(enriched[0].excerpt, "Revenue grows Revenue grew 12 percent year over year.")
 
+    def test_enrich_articles_uses_json_ld_article_body_fallback(self) -> None:
+        article = NewsArticle("Nike recovery gains momentum - Example News", "Example News", "https://example.com/nike", None)
+        html = """<html><head>
+        <script type="application/ld+json">
+        {"@type":"NewsArticle","description":"Nike recovery gains momentum as sales stabilize across several markets.",
+         "articleBody":"Nike recovery gains momentum after revenue stabilized. Management described improving demand and better inventory levels across its largest markets."}
+        </script></head><body><main>Latest unrelated market headlines and promotional links.</main></body></html>"""
+        client = NewsClient(article_excerpt_limit=1, max_excerpt_chars=500)
+
+        with patch("recovery_trader.integrations.news.urlopen", return_value=FakeResponse(html, "text/html")):
+            enriched = client.enrich_articles([article])
+
+        self.assertEqual(
+            enriched[0].excerpt,
+            "Nike recovery gains momentum after revenue stabilized. Management described improving demand and better inventory levels across its largest markets.",
+        )
+
+    def test_enrich_articles_uses_open_graph_description_fallback(self) -> None:
+        article = NewsArticle("Nike recovery gains momentum - Example News", "Example News", "https://example.com/nike", None)
+        description = (
+            "Nike's recovery gained momentum as wholesale demand stabilized, inventory levels improved, "
+            "and management outlined the next phase of its product strategy for investors."
+        )
+        html = f'<html><head><meta property="og:description" content="{description}"></head><body></body></html>'
+        client = NewsClient(article_excerpt_limit=1, max_excerpt_chars=500)
+
+        with patch("recovery_trader.integrations.news.urlopen", return_value=FakeResponse(html, "text/html")):
+            enriched = client.enrich_articles([article])
+
+        self.assertEqual(enriched[0].excerpt, description)
+
+    def test_enrich_articles_rejects_unrelated_metadata_description(self) -> None:
+        article = NewsArticle("Nike recovery gains momentum - Example News", "Example News", "https://example.com/nike", None)
+        html = """<html><head><meta name="description" content="Subscribe for breaking technology coverage, newsletters, market alerts, and exclusive reporting from our newsroom."></head><body></body></html>"""
+        client = NewsClient(article_excerpt_limit=1)
+
+        with patch("recovery_trader.integrations.news.urlopen", return_value=FakeResponse(html, "text/html")):
+            enriched = client.enrich_articles([article])
+
+        self.assertIsNone(enriched[0].excerpt)
+
     def test_enrich_articles_prefers_matching_headline_over_unrelated_main_element(self) -> None:
         title = "Junto Capital Management LP Invests $21.68 Million in Constellation Brands Inc $STZ - MarketBeat"
         article = NewsArticle(title, "MarketBeat", "https://example.com/stz", None)

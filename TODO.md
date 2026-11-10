@@ -13,18 +13,20 @@ inactive until they are validated and explicitly approved.
 - [ ] Trim the remaining prompt-only fields that do not alter Qwen's analysis
   or a deterministic score. Candidates: `market.bar_count`, the duplicate SEC
   brief availability date, and the estimated-next-earnings fields.
-- [ ] Show prompt size before generation: character count, approximate token
-  count, number of readable article excerpts, and the configured model context
-  window. Warn when it is likely to crowd out the response.
+- [x] Show prompt size before generation: character count, approximate token
+  count, number of readable article excerpts, configured model context, and
+  safe input headroom after a configurable reasoning/output reserve.
 - [x] Continue through the nine news candidates in feed order until three usable
   excerpts are found or all candidates are exhausted.
-- [ ] Record why article extraction fails and try bounded fallbacks such as
-  JSON-LD or an Open Graph description while preserving timeout, size,
-  sanitization, and paywall safeguards.
+- [x] Try bounded JSON-LD article-body and page-description fallbacks while
+  preserving timeout, size, sanitization, and relevance safeguards.
+- [ ] Record why each article extraction fails so attempted failures can be
+  distinguished from records intentionally left headline-only after three
+  excerpts have been collected.
 - [ ] Deduplicate syndicated or substantially similar news so Qwen does not
   treat the same event as independent confirmation.
-- [ ] Apply a recency policy to news and explicitly label undated articles as
-  low-confidence evidence.
+- [x] Apply a deterministic freshness policy to readable news; undated articles
+  receive no freshness credit and are labeled with an unavailable date.
 - [ ] Make Qwen state the supplied evidence it relied on for each category,
   rather than allowing a generic rationale.
 
@@ -45,8 +47,9 @@ inactive until they are validated and explicitly approved.
 - [ ] Decide whether the expected next earnings date should become an explicit
   event-risk input. It is currently an SEC-cadence estimate, not a company
   confirmed date.
-- [ ] Define a deterministic news-confidence score based on publisher
-  diversity, article accessibility, recency, and duplication.
+- [x] Base deterministic news coverage on validated excerpt count, distinct
+  readable publishers, and readable-article freshness. Headline-only records
+  do not contribute. Duplication remains a separate pending safeguard.
 
 ## Strengthen SEC earnings evidence
 
