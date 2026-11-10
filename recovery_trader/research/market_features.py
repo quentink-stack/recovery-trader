@@ -28,6 +28,10 @@ class MarketFeatures:
     volatility_return_count: int
     overnight_gap_pct: float
     intraday_return_pct: float
+    sector_name: str | None = None
+    sector_benchmark: str | None = None
+    sector_return_pct: float | None = None
+    excess_drop_vs_sector_pct: float | None = None
 
 
 def build_market_features(
@@ -36,6 +40,9 @@ def build_market_features(
     minimum_drop_pct: float,
     *,
     volatility_sessions: int = 20,
+    sector_bars: list[DailyBar] | None = None,
+    sector_name: str | None = None,
+    sector_benchmark: str | None = None,
 ) -> MarketFeatures | None:
     """Build features for the latest actionable close-to-close drop.
 
@@ -48,6 +55,9 @@ def build_market_features(
         benchmark_bars,
         minimum_drop_pct,
         volatility_sessions=volatility_sessions,
+        sector_bars=sector_bars,
+        sector_name=sector_name,
+        sector_benchmark=sector_benchmark,
     )
     return history[-1] if history else None
 
@@ -58,6 +68,9 @@ def build_market_feature_history(
     minimum_drop_pct: float,
     *,
     volatility_sessions: int = 20,
+    sector_bars: list[DailyBar] | None = None,
+    sector_name: str | None = None,
+    sector_benchmark: str | None = None,
 ) -> tuple[MarketFeatures, ...]:
     """Return every actionable qualifying event in chronological order."""
     if minimum_drop_pct <= 0:
@@ -70,6 +83,7 @@ def build_market_feature_history(
         return ()
 
     benchmark_by_day = {bar.day: bar for bar in benchmark_bars}
+    sector_by_day = {bar.day: bar for bar in sector_bars or []}
     events: list[MarketFeatures] = []
     for signal_index in range(1, len(ordered) - 1):
         drop_pct = _percent_return(ordered[signal_index - 1].close, ordered[signal_index].close)
@@ -81,6 +95,9 @@ def build_market_feature_history(
                     signal_index,
                     minimum_drop_pct,
                     volatility_sessions,
+                    sector_by_day,
+                    sector_name,
+                    sector_benchmark,
                 )
             )
     return tuple(events)
@@ -92,6 +109,9 @@ def _build_event_features(
     signal_index: int,
     minimum_drop_pct: float,
     volatility_sessions: int,
+    sector_by_day: dict[date, DailyBar],
+    sector_name: str | None,
+    sector_benchmark: str | None,
 ) -> MarketFeatures:
     prior_bar = ordered[signal_index - 1]
     signal_bar = ordered[signal_index]
@@ -105,6 +125,14 @@ def _build_event_features(
     if benchmark_prior is not None and benchmark_signal is not None:
         spy_return_pct = _percent_return(benchmark_prior.close, benchmark_signal.close)
         excess_drop_vs_spy_pct = drop_pct - spy_return_pct
+
+    sector_prior = sector_by_day.get(prior_bar.day)
+    sector_signal = sector_by_day.get(signal_bar.day)
+    sector_return_pct = None
+    excess_drop_vs_sector_pct = None
+    if sector_prior is not None and sector_signal is not None:
+        sector_return_pct = _percent_return(sector_prior.close, sector_signal.close)
+        excess_drop_vs_sector_pct = drop_pct - sector_return_pct
 
     prior_daily_volatility_pct = None
     drop_volatility_multiple = None
@@ -136,6 +164,10 @@ def _build_event_features(
         volatility_return_count=volatility_return_count,
         overnight_gap_pct=_percent_return(prior_bar.close, signal_bar.open),
         intraday_return_pct=_percent_return(signal_bar.open, signal_bar.close),
+        sector_name=sector_name,
+        sector_benchmark=sector_benchmark,
+        sector_return_pct=sector_return_pct,
+        excess_drop_vs_sector_pct=excess_drop_vs_sector_pct,
     )
 
 

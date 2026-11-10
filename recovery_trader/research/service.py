@@ -41,6 +41,8 @@ class ResearchService:
         lookback_bars: int = 30,
         news_limit: int = 10,
         minimum_drop_pct: float = 5.0,
+        sector_name: str | None = None,
+        sector_benchmark: str | None = None,
         on_stage: ResearchStageCallback | None = None,
     ) -> ResearchContext:
         """Fetch market/news evidence and return one normalized research context."""
@@ -50,14 +52,17 @@ class ResearchService:
         normalized_ticker = ticker.strip().upper()
         batch_loader = getattr(self.market_data, "daily_bars_for_symbols", None)
         if callable(batch_loader):
-            bars_by_symbol = batch_loader((normalized_ticker, "SPY"), start, research_date)
+            symbols = tuple(dict.fromkeys(symbol for symbol in (normalized_ticker, "SPY", sector_benchmark) if symbol))
+            bars_by_symbol = batch_loader(symbols, start, research_date)
             bars = bars_by_symbol.get(normalized_ticker, [])
             benchmark_bars = bars_by_symbol.get("SPY", [])
+            sector_bars = bars_by_symbol.get(sector_benchmark, []) if sector_benchmark else []
         else:
             # Compatibility for simple adapters and test doubles. Production
             # Alpaca collection uses the single batched request above.
             bars = self.market_data.daily_bars(ticker, start, research_date)
             benchmark_bars = []
+            sector_bars = []
         _report_stage(on_stage, "Fetching recent news")
         articles = self.news_client.recent_articles(ticker, limit=news_limit)
         article_enricher = getattr(self.news_client, "enrich_articles", None)
@@ -74,6 +79,9 @@ class ResearchService:
             lookback_bars=lookback_bars,
             earnings=earnings,
             benchmark_bars=benchmark_bars,
+            sector_bars=sector_bars,
+            sector_name=sector_name,
+            sector_benchmark=sector_benchmark,
             minimum_drop_pct=minimum_drop_pct,
         )
 

@@ -90,7 +90,12 @@ class ResearchContextTests(TestCase):
                     DailyBar(days[21], 119, 120, 118, 118.8),
                     DailyBar(days[22], 119, 120, 118, 119),
                 ]
-                return {"TEST": ticker_bars, "SPY": spy_bars}
+                xlk_bars = [
+                    DailyBar(days[20], 200, 201, 199, 200),
+                    DailyBar(days[21], 197, 198, 196, 197),
+                    DailyBar(days[22], 198, 199, 197, 198),
+                ]
+                return {"TEST": ticker_bars, "SPY": spy_bars, "XLK": xlk_bars}
 
         class FakeNewsClient:
             def recent_articles(self, ticker: str, limit: int) -> list[NewsArticle]:
@@ -98,15 +103,21 @@ class ResearchContextTests(TestCase):
 
         market_data = FakeMarketData()
         context = ResearchService(market_data, FakeNewsClient()).collect(  # type: ignore[arg-type]
-            "test", as_of=date(2026, 7, 23), minimum_drop_pct=5.0
+            "test",
+            as_of=date(2026, 7, 23),
+            minimum_drop_pct=5.0,
+            sector_name="Information Technology",
+            sector_benchmark="XLK",
         )
 
-        self.assertEqual(market_data.request[0], ("TEST", "SPY"))
+        self.assertEqual(market_data.request[0], ("TEST", "SPY", "XLK"))
         self.assertIsNotNone(context.market_features)
         assert context.market_features is not None
         self.assertAlmostEqual(context.market_features.close_to_close_drop_pct, -10.0)
         self.assertAlmostEqual(context.market_features.spy_return_pct, -1.0)
         self.assertAlmostEqual(context.market_features.excess_drop_vs_spy_pct, -9.0)
+        self.assertAlmostEqual(context.market_features.sector_return_pct, -1.5)
+        self.assertAlmostEqual(context.market_features.excess_drop_vs_sector_pct, -8.5)
         self.assertNotIn("market_features", context.to_payload())
 
     def test_empty_bars_leave_market_context_empty(self) -> None:

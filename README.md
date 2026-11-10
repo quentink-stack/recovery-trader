@@ -71,7 +71,7 @@ The first research data source is the public Google News RSS search feed. For ea
 
 `recovery_trader/research/report.py` builds that prompt and parses the Qwen response into a `ResearchReport`. The report requires market, earnings, news, macro, regulation, and sentiment assessments. Python calculates two separate 0–100 values: an evidence-adjusted recovery score from those ratings and deterministic evidence coverage from the market, news, and compact SEC inputs actually supplied to the model.
 
-The Streamlit app now includes a **Ticker research** section. Enter a symbol and select **Research ticker** to collect recent Alpaca prices and Google News articles, generate a Qwen3 report, and view the recovery score, evidence coverage, category evidence, catalysts, risks, uncertainties, and source links.
+The Streamlit app now includes a **Ticker research** section. Enter a symbol and select **Research ticker** to collect recent Alpaca prices and Google News articles, generate a Qwen3 report, and view the recovery score, evidence coverage, category evidence, catalysts, risks, uncertainties, and source links. For tickers in the saved S&P 500 universe, the inspection-only market preview also compares the signal-day decline with SPY and the corresponding GICS sector ETF; this preview is not sent to Qwen or used in scoring.
 
 ## S&P 500 screener
 

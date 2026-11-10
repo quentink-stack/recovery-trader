@@ -26,8 +26,19 @@ class MarketFeatureTests(TestCase):
             DailyBar(prior_day, 500, 501, 499, 500),
             DailyBar(signal_day, 497, 499, 494, 495),
         ]
+        sector = [
+            DailyBar(prior_day, 200, 201, 199, 200),
+            DailyBar(signal_day, 194, 196, 193, 194),
+        ]
 
-        features = build_market_features(bars, spy, 5.0)
+        features = build_market_features(
+            bars,
+            spy,
+            5.0,
+            sector_bars=sector,
+            sector_name="Information Technology",
+            sector_benchmark="XLK",
+        )
 
         self.assertIsNotNone(features)
         assert features is not None
@@ -36,6 +47,10 @@ class MarketFeatureTests(TestCase):
         self.assertAlmostEqual(features.close_to_close_drop_pct, -10.0)
         self.assertAlmostEqual(features.spy_return_pct, -1.0)
         self.assertAlmostEqual(features.excess_drop_vs_spy_pct, -9.0)
+        self.assertEqual(features.sector_name, "Information Technology")
+        self.assertEqual(features.sector_benchmark, "XLK")
+        self.assertAlmostEqual(features.sector_return_pct, -3.0)
+        self.assertAlmostEqual(features.excess_drop_vs_sector_pct, -7.0)
         self.assertAlmostEqual(features.overnight_gap_pct, -5.0)
         self.assertAlmostEqual(features.intraday_return_pct, (108 / 114 - 1) * 100)
         expected_returns = [(101 + index) / (100 + index) * 100 - 100 for index in range(20)]

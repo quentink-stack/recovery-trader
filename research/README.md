@@ -18,6 +18,12 @@ completed for this candidate.
 
 ## Approved application decisions
 
+- **November 10, 2026 — sector-relative preview only:** Ticker research for a
+  saved S&P 500 constituent compares the signal-day stock decline with both SPY
+  and the corresponding GICS sector ETF. The sector-relative value remains an
+  inspection-only market feature: it is not sent to Qwen and does not change
+  evidence coverage or recovery scoring. Non-constituents remain without an
+  inferred sector benchmark rather than receiving a guessed classification.
 - **November 10, 2026 — readable news only:** Headline-only discoveries remain
   visible as research leads but are excluded from the Qwen payload, news
   evidence coverage, and recovery-score contribution. News coverage now uses

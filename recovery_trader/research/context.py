@@ -109,6 +109,9 @@ def build_research_context(
     lookback_bars: int = 30,
     earnings: EarningsEvidence | None = None,
     benchmark_bars: list[DailyBar] | None = None,
+    sector_bars: list[DailyBar] | None = None,
+    sector_name: str | None = None,
+    sector_benchmark: str | None = None,
     minimum_drop_pct: float = 5.0,
 ) -> ResearchContext:
     """Build a compact context from recent bars and already-fetched news."""
@@ -119,7 +122,14 @@ def build_research_context(
         raise ValueError("Lookback bars must be positive.")
 
     ordered_bars = sorted(bars, key=lambda bar: bar.day)
-    market_features = build_market_features(ordered_bars, benchmark_bars or [], minimum_drop_pct)
+    market_features = build_market_features(
+        ordered_bars,
+        benchmark_bars or [],
+        minimum_drop_pct,
+        sector_bars=sector_bars,
+        sector_name=sector_name,
+        sector_benchmark=sector_benchmark,
+    )
     recent_bars = ordered_bars[-lookback_bars:]
     market = None
     if recent_bars:
