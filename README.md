@@ -71,7 +71,7 @@ The first research data source is the public Google News RSS search feed. For ea
 
 `recovery_trader/research/report.py` builds that prompt and parses the Qwen response into a `ResearchReport`. The report requires market, earnings, news, macro, regulation, and sentiment assessments. Python calculates two separate 0–100 values: an evidence-adjusted recovery score from those ratings and deterministic evidence coverage from the market, news, and compact SEC inputs actually supplied to the model.
 
-The Streamlit app now includes a **Ticker research** section. Enter a symbol and select **Research ticker** to collect recent Alpaca prices and Google News articles, generate a Qwen3 report, and view the recovery score, evidence coverage, category evidence, catalysts, risks, uncertainties, and source links.
+The Streamlit app now includes a **Ticker research** section. Enter a symbol and select **Research ticker** to collect recent Alpaca prices and Google News articles, generate a Qwen3 report, and view the recovery score, evidence coverage, category evidence, catalysts, risks, uncertainties, and source links. For tickers in the saved S&P 500 universe, the market preview compares the signal-day decline with SPY and the corresponding GICS sector ETF. That compact drop-scope block is sent to Qwen with a frozen extreme-risk flag and 40% predictive confidence. It adds no evidence coverage, category weight, or deterministic score adjustment; prompt rules prohibit treating non-extreme values as positive or making the market rating negative from the flag alone.
 
 ## S&P 500 screener
 
@@ -115,6 +115,26 @@ Analyze an existing export without new Alpaca requests or Qwen calls:
 ```powershell
 python -m scripts.analyze_market_consistency exports/market-analysis-20260909-152502-884305
 ```
+
+To compare forward outcomes by signal-day performance relative to each stock's
+GICS sector ETF, run:
+
+```powershell
+python -m scripts.analyze_sector_relative exports/market-analysis-20260909-152502-884305
+```
+
+This makes one read-only Alpaca batch request for the 11 sector ETFs and reuses
+the saved stock bars. Raw sector bars and event rows remain under the new ignored
+`exports/sector-relative-.../` directory; the dated research record preserves
+the compact aggregate findings.
+
+To repeat the fixed raw-drop matching follow-up against that local result:
+
+```powershell
+python -m scripts.analyze_sector_relative_matched exports/sector-relative-20261110-144044-607631
+```
+
+The matched analysis is offline and makes no Alpaca or Qwen request.
 
 Replace the directory with your export. A new ignored `exports/consistency-.../`
 directory contains `summary.csv`, `by_quarter.csv`, `by_sector.csv`, individual

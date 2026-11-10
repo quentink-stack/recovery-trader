@@ -10,6 +10,10 @@ from recovery_trader.integrations.news import ARTICLE_EXCERPT_LIMIT, NewsArticle
 from recovery_trader.integrations.sec_edgar import CompanyProfile, EarningsFacts, EarningsRelease
 from recovery_trader.research.earnings import EarningsBrief, brief_to_payload
 from recovery_trader.research.market_features import MarketFeatures, build_market_features
+from recovery_trader.research.sector_benchmarks import (
+    EXTREME_SECTOR_EXCESS_CUTOFF_PP,
+    SECTOR_RELATIVE_PREDICTIVE_CONFIDENCE,
+)
 
 
 # Keep this aligned with the deterministic category weights in report.py.  The
@@ -82,6 +86,31 @@ class ResearchContext:
                 for article in self.readable_news
             ],
         }
+        features = self.market_features
+        if (
+            features is not None
+            and features.spy_return_pct is not None
+            and features.excess_drop_vs_spy_pct is not None
+            and features.sector_name
+            and features.sector_benchmark
+            and features.sector_return_pct is not None
+            and features.excess_drop_vs_sector_pct is not None
+        ):
+            payload["drop_scope"] = {
+                "signal_day": features.signal_day,
+                "stock_return_pct": round(features.close_to_close_drop_pct, 4),
+                "spy_return_pct": round(features.spy_return_pct, 4),
+                "excess_vs_spy_pct": round(features.excess_drop_vs_spy_pct, 4),
+                "sector": features.sector_name,
+                "sector_benchmark": features.sector_benchmark,
+                "sector_return_pct": round(features.sector_return_pct, 4),
+                "excess_vs_sector_pct": round(features.excess_drop_vs_sector_pct, 4),
+                "extreme_company_specific_risk": (
+                    features.excess_drop_vs_sector_pct <= EXTREME_SECTOR_EXCESS_CUTOFF_PP
+                ),
+                "extreme_cutoff_pct_points": round(EXTREME_SECTOR_EXCESS_CUTOFF_PP, 4),
+                "predictive_confidence_percent": SECTOR_RELATIVE_PREDICTIVE_CONFIDENCE,
+            }
         if self.earnings is not None and self.earnings.brief is not None:
             payload["earnings"] = {
                 "industry": self.earnings.profile.sic_description if self.earnings.profile else None,
@@ -109,6 +138,9 @@ def build_research_context(
     lookback_bars: int = 30,
     earnings: EarningsEvidence | None = None,
     benchmark_bars: list[DailyBar] | None = None,
+    sector_bars: list[DailyBar] | None = None,
+    sector_name: str | None = None,
+    sector_benchmark: str | None = None,
     minimum_drop_pct: float = 5.0,
 ) -> ResearchContext:
     """Build a compact context from recent bars and already-fetched news."""
@@ -119,7 +151,14 @@ def build_research_context(
         raise ValueError("Lookback bars must be positive.")
 
     ordered_bars = sorted(bars, key=lambda bar: bar.day)
-    market_features = build_market_features(ordered_bars, benchmark_bars or [], minimum_drop_pct)
+    market_features = build_market_features(
+        ordered_bars,
+        benchmark_bars or [],
+        minimum_drop_pct,
+        sector_bars=sector_bars,
+        sector_name=sector_name,
+        sector_benchmark=sector_benchmark,
+    )
     recent_bars = ordered_bars[-lookback_bars:]
     market = None
     if recent_bars:

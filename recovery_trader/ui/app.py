@@ -31,13 +31,18 @@ from recovery_trader.research.report import (
     generate_report,
 )
 from recovery_trader.research.service import ResearchService
+from recovery_trader.research.sector_benchmarks import (
+    EXTREME_SECTOR_EXCESS_CUTOFF_PP,
+    SECTOR_RELATIVE_PREDICTIVE_CONFIDENCE,
+    sector_benchmark_for_ticker,
+)
 
 ROOT = Path(__file__).parents[2]
 SP500 = ROOT / "data" / "sp500.csv"
 SCREEN_DATA_VERSION = "day-two-signal-v1"
 MARKET_FEATURE_LAB_VERSION = "market-feature-outcomes-v2"
 NEWS_CLIENT_VERSION = "metadata-fallback-v1"
-RESEARCH_PIPELINE_VERSION = "readable-news-only-v3"
+RESEARCH_PIPELINE_VERSION = "sector-risk-context-v5"
 RESEARCH_SESSION_KEYS = (
     "ticker_research_context",
     "ticker_research_report",
@@ -776,11 +781,12 @@ def display_market_data_preview(context: ResearchContext) -> None:
 
 
 def display_market_features_preview(context: ResearchContext) -> None:
-    """Show deterministic drop-event features without changing model input."""
+    """Show deterministic drop-event features and their Qwen evidence boundary."""
     with st.container(border=True):
         st.subheader("Market features preview")
         st.caption(
-            "Inspection only: these features are not sent to Qwen and do not affect evidence coverage or recovery scoring. "
+            "The stock, SPY, and sector return fields plus the exploratory risk flag are sent to Qwen as drop-scope context. "
+            "They add no evidence coverage, category weight, or deterministic score adjustment; the remaining preview fields are not sent. "
             "The event is the latest qualifying close-to-close decline with a following day-3 entry session."
         )
         features = getattr(context, "market_features", None)
@@ -799,40 +805,77 @@ def display_market_features_preview(context: ResearchContext) -> None:
             {
                 "Feature": "Close-to-close drop",
                 "Value": features.close_to_close_drop_pct,
+                "Benchmark return": None,
                 "Unit": "%",
                 "What it shows": "The stock's day-1 close to day-2 close signal.",
             },
             {
                 "Feature": "Excess drop vs SPY",
                 "Value": features.excess_drop_vs_spy_pct,
+                "Benchmark return": features.spy_return_pct,
                 "Unit": "%",
                 "What it shows": "Stock return minus SPY; more negative means more stock-specific weakness.",
             },
             {
                 "Feature": "Drop / prior volatility",
                 "Value": features.drop_volatility_multiple,
+                "Benchmark return": None,
                 "Unit": "×",
                 "What it shows": "Absolute drop magnitude measured in normal daily-volatility units.",
             },
             {
                 "Feature": "Overnight gap",
                 "Value": features.overnight_gap_pct,
+                "Benchmark return": None,
                 "Unit": "%",
                 "What it shows": "Day-1 close to day-2 open.",
             },
             {
                 "Feature": "Signal-day intraday return",
                 "Value": features.intraday_return_pct,
+                "Benchmark return": None,
                 "Unit": "%",
                 "What it shows": "Day-2 open to day-2 close.",
             },
         ]
+        if features.sector_benchmark:
+            feature_rows.insert(
+                2,
+                {
+                    "Feature": f"Excess drop vs {features.sector_benchmark}",
+                    "Value": features.excess_drop_vs_sector_pct,
+                    "Benchmark return": features.sector_return_pct,
+                    "Unit": "%",
+                    "What it shows": (
+                        f"Stock return minus {features.sector_name}; more negative means the decline was more company-specific."
+                    ),
+                },
+            )
         st.dataframe(
             pd.DataFrame(feature_rows),
             hide_index=True,
-            column_config={"Value": st.column_config.NumberColumn(format="%.2f")},
+            column_config={
+                "Value": st.column_config.NumberColumn(format="%.2f"),
+                "Benchmark return": st.column_config.NumberColumn(format="%.2f%%"),
+            },
             width="stretch",
         )
+        if not features.sector_benchmark:
+            st.caption("Sector comparison unavailable: the ticker was not classified in the saved S&P 500 universe.")
+        elif features.excess_drop_vs_sector_pct is not None:
+            extreme_risk = features.excess_drop_vs_sector_pct <= EXTREME_SECTOR_EXCESS_CUTOFF_PP
+            if extreme_risk:
+                st.warning(
+                    f"Extreme company-specific risk flag: excess versus {features.sector_benchmark} is "
+                    f"{features.excess_drop_vs_sector_pct:.2f} points, at or below the frozen "
+                    f"{EXTREME_SECTOR_EXCESS_CUTOFF_PP:.2f}-point boundary. Qwen receives this with "
+                    f"{SECTOR_RELATIVE_PREDICTIVE_CONFIDENCE}% predictive confidence and must require corroboration."
+                )
+            else:
+                st.caption(
+                    f"No extreme company-specific risk flag. Non-extreme sector-relative performance is neutral, "
+                    f"not a positive recovery signal. Predictive confidence: {SECTOR_RELATIVE_PREDICTIVE_CONFIDENCE}%."
+                )
         if features.prior_daily_volatility_pct is None:
             st.caption(
                 f"Volatility unavailable: {features.volatility_return_count} of 20 required pre-signal returns were available."
@@ -876,9 +919,12 @@ def ticker_research_section(minimum_drop_pct: float) -> None:
             progress = ResearchProgress(status_slot, ticker, ollama_timeout=model_client.config.timeout)
             try:
                 progress.begin("Validating ticker")
+                sector_name, sector_benchmark = sector_benchmark_for_ticker(ticker, load_watchlist(SP500))
                 context = research_service().collect(
                     ticker,
                     minimum_drop_pct=minimum_drop_pct,
+                    sector_name=sector_name,
+                    sector_benchmark=sector_benchmark,
                     on_stage=progress.begin,
                 )
                 st.session_state["ticker_research_context"] = context

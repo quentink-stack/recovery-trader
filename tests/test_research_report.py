@@ -33,6 +33,8 @@ class ResearchReportTests(TestCase):
 
         self.assertIn('"ticker": "TEST"', prompt)
         self.assertIn("Return JSON only", prompt)
+        self.assertIn("Never make the market rating negative from this flag alone", prompt)
+        self.assertIn("relative strength is neutral", prompt)
         self.assertNotIn("TEST earnings", prompt)
         self.assertIn('"news": []', prompt)
 
