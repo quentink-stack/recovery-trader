@@ -31,11 +31,6 @@ python -m streamlit run streamlit_app.py
 
 The app opens in your browser. It is a local, read-only research dashboard and contains no order endpoints.
 
-Leave `ollama serve` running. Ollama loads the model automatically on the first ticker-research request. To load it before using the app, run:
-
-```powershell
-ollama run qwen3:14b "Reply READY"
-```
 
 If `ollama serve` reports that the address is already in use, Ollama is already running and you can continue with the second window.
 
