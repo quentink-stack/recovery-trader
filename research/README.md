@@ -3,7 +3,7 @@
 Start here when resuming strategy research. This index and the dated experiment
 folders preserve the findings independently of a chat session.
 
-## Current state — November 10, 2026
+## Current state — November 16, 2026
 
 The original hypothesis is that some sharp one-session declines overreact to
 news, creating a recovery opportunity. Our current dataset tests **all qualifying
@@ -28,8 +28,19 @@ lower 20/30-session medians and recovery rates in both periods. Only 243 of 508
 extreme events matched, and recent uncertainty remained wide, so this raises the
 indicator to a promising risk flag but still does not authorize scoring.
 
+The point-in-time NFCI experiment did not support the proposed tightening-risk
+rule. Older 20/30-session differences were essentially flat, recent results ran
+in the opposite direction, quartiles were non-monotonic, and every event occurred
+while NFCI was below zero. NFCI remains inspection-only and does not authorize a
+Qwen or scoring change.
+
 ## Approved application decisions
 
+- **November 16, 2026 — NFCI inspection and experiment only:** Ticker research
+  may show the latest point-in-time Chicago Fed NFCI value and four-week change
+  from ALFRED. The preview is not sent to Qwen and does not affect evidence
+  coverage, category weights, or recovery scoring. A pre-registered experiment
+  must be reviewed before a separate scoring decision.
 - **November 10, 2026 — sector-relative risk context for Qwen:** The user
   explicitly approved sending the compact stock/SPY/sector drop comparison,
   frozen `-7.3542`-point extreme-risk boundary, and 40% predictive confidence
@@ -57,6 +68,7 @@ indicator to a promising risk flag but still does not authorize scoring.
 
 | Record | Status | Main finding |
 |---|---|---|
+| [2026-11-16: Point-in-time NFCI and dip recovery](experiments/2026-11-16-nfci-recovery/README.md) | Exploratory; reused outcomes | The adverse tightening hypothesis failed; recent results reversed direction and the sample never entered an above-zero NFCI regime. |
 | [2026-11-10: Raw-drop-matched sector-relative outcomes](experiments/2026-11-10-sector-relative-matched-drops/README.md) | Post-hoc exploratory; all outcomes already inspected | Extreme drops remained weaker after same-sector raw-drop matching, but match coverage and recent precision are insufficient for scoring. |
 | [2026-11-10: Sector-relative drops](experiments/2026-11-10-sector-relative-drops/README.md) | Exploratory; data already inspected | Extreme company-specific drops were weakest; no stable monotonic rule, with raw-drop severity confounding the groups. |
 | [2026-09-09: Recovery exits](experiments/2026-09-09-recovery-exits/README.md) | Exploratory; data already inspected | Recovery exits looked steadier by median/win rate; large losses and lower mean returns remain. |

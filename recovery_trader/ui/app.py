@@ -12,11 +12,13 @@ import pandas as pd
 import streamlit as st
 
 from recovery_trader.integrations.alpaca import AlpacaMarketData
+from recovery_trader.integrations.fred import AlfredClient, FredDataError
 from recovery_trader.integrations.news import NewsClient
 from recovery_trader.integrations.ollama import OllamaClient
 from recovery_trader.integrations.sec_edgar import EarningsFacts, SecEdgarClient
 from recovery_trader.domain.screener import latest_large_drop, load_watchlist
 from recovery_trader.research.context import EarningsEvidence, ResearchContext
+from recovery_trader.research.financial_conditions import fetch_current_nfci_feature
 from recovery_trader.research.market_feature_lab import (
     build_market_feature_observations,
     chronological_evaluation_periods,
@@ -43,6 +45,7 @@ SCREEN_DATA_VERSION = "day-two-signal-v1"
 MARKET_FEATURE_LAB_VERSION = "market-feature-outcomes-v2"
 NEWS_CLIENT_VERSION = "metadata-fallback-v1"
 RESEARCH_PIPELINE_VERSION = "sector-risk-context-v5"
+FINANCIAL_CONDITIONS_PREVIEW_VERSION = "nfci-inspection-v1"
 RESEARCH_SESSION_KEYS = (
     "ticker_research_context",
     "ticker_research_report",
@@ -198,6 +201,12 @@ def research_prompt_budget(context: ResearchContext, model_client: OllamaClient)
 def load_daily_bars(tickers: tuple[str, ...], start: date, end: date, data_version: str) -> dict[str, list]:
     """Load a versioned data set; data_version is part of the Streamlit cache key."""
     return client().daily_bars_for_symbols(tickers, start, end)
+
+
+@st.cache_data(ttl="12h", max_entries=8, show_spinner=False)
+def load_financial_conditions_preview(as_of: date, data_version: str):
+    """Load one shared, versioned NFCI preview without touching Qwen evidence."""
+    return fetch_current_nfci_feature(AlfredClient(timeout=60), as_of)
 
 
 def user_error(exc: Exception) -> str:
@@ -883,6 +892,65 @@ def display_market_features_preview(context: ResearchContext) -> None:
         st.caption("The overnight and intraday returns compound to the close-to-close result; they are not simply additive.")
 
 
+def display_financial_conditions_preview(as_of: date) -> None:
+    """Show the latest point-in-time NFCI values without changing analysis."""
+    with st.container(border=True):
+        st.subheader("Financial conditions preview")
+        st.caption(
+            "Inspection only: NFCI is not sent to Qwen and does not affect evidence coverage, category weights, "
+            "or recovery scoring. The four-week relationship is being tested before any scoring decision."
+        )
+        try:
+            with st.spinner("Loading point-in-time NFCI data from ALFRED…"):
+                feature = load_financial_conditions_preview(as_of, FINANCIAL_CONDITIONS_PREVIEW_VERSION)
+        except FredDataError as exc:
+            st.info(f"Financial conditions preview unavailable: {exc}")
+            return
+        if feature is None:
+            st.info("No NFCI observation was available before this research date.")
+            return
+
+        change = feature.four_week_change
+        with st.container(horizontal=True):
+            st.metric(
+                "Latest NFCI",
+                f"{feature.value:.3f}",
+                border=True,
+                help="Positive values indicate tighter-than-average financial conditions; negative values indicate looser conditions.",
+            )
+            st.metric(
+                "Four-week change",
+                f"{change:+.3f}" if change is not None else "Unavailable",
+                border=True,
+                help="Current point-in-time NFCI minus the observation from four weeks earlier. Positive means tightening.",
+            )
+            st.metric(
+                "Observation week",
+                feature.observation_date.isoformat(),
+                border=True,
+            )
+            st.metric(
+                "Available since",
+                feature.available_date.isoformat(),
+                border=True,
+            )
+        direction = (
+            "tightening"
+            if change is not None and change > 0
+            else "stable/easing" if change is not None else "unavailable"
+        )
+        comparison = (
+            f"Compared with {feature.comparison_observation_date.isoformat()} at {feature.comparison_value:.3f}. "
+            if feature.comparison_observation_date is not None and feature.comparison_value is not None
+            else "A complete four-week comparison was unavailable. "
+        )
+        st.caption(
+            f"{comparison}Current descriptive direction: {direction}. "
+            f"The latest observation is {feature.observation_age_days} days before the research date and was "
+            f"released {feature.release_age_days} days before it."
+        )
+
+
 def _format_days_until(days: int | None) -> str:
     if days is None:
         return "Unavailable"
@@ -956,6 +1024,7 @@ def ticker_research_section(minimum_drop_pct: float) -> None:
         display_report(report)
         if isinstance(context, ResearchContext):
             display_market_features_preview(context)
+            display_financial_conditions_preview(date.fromisoformat(context.as_of))
             display_market_data_preview(context)
             display_qwen_evidence_preview(context)
             display_earnings_preview(context.earnings)
@@ -974,6 +1043,7 @@ def ticker_research_section(minimum_drop_pct: float) -> None:
         st.info("The saved report used the prior one-score format. Run ticker research again to calculate recovery score and evidence coverage.")
     elif isinstance(context, ResearchContext):
         display_market_features_preview(context)
+        display_financial_conditions_preview(date.fromisoformat(context.as_of))
         display_market_data_preview(context)
 
 

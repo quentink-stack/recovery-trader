@@ -51,6 +51,11 @@ inactive until they are validated and explicitly approved.
   explicitly constrained 40%-confidence risk context only.
 - [ ] Keep macro, regulation, and sentiment neutral unless a dedicated,
   time-stamped source is actually supplied for that category.
+- [x] Run and review the pre-registered point-in-time NFCI experiment. The
+  adverse hypothesis failed and recent results reversed direction; keep the app
+  preview inspection-only and do not add NFCI to Qwen, coverage, or scoring.
+- [ ] If NFCI is revisited, use broader point-in-time history containing both
+  above-zero and below-zero regimes and pre-register a genuinely unseen test.
 - [ ] Decide whether the expected next earnings date should become an explicit
   event-risk input. It is currently an SEC-cadence estimate, not a company
   confirmed date.
