@@ -73,6 +73,8 @@ The first research data source is the public Google News RSS search feed. For ea
 
 The Streamlit app now includes a **Ticker research** section. Enter a symbol and select **Research ticker** to collect recent Alpaca prices and Google News articles, generate a Qwen3 report, and view the recovery score, evidence coverage, category evidence, catalysts, risks, uncertainties, and source links. For tickers in the saved S&P 500 universe, the market preview compares the signal-day decline with SPY and the corresponding GICS sector ETF. That compact drop-scope block is sent to Qwen with a frozen extreme-risk flag and 40% predictive confidence. It adds no evidence coverage, category weight, or deterministic score adjustment; prompt rules prohibit treating non-extreme values as positive or making the market rating negative from the flag alone.
 
+Ticker research also shows an inspection-only **Financial conditions preview** using point-in-time Chicago Fed NFCI revisions from ALFRED. It displays the latest value and four-week change known before the research date. NFCI is not sent to Qwen and does not affect coverage, weights, or recovery scoring; the initial two-year experiment did not justify a directional rule.
+
 ## S&P 500 screener
 
 The drop screener defaults to the locally stored S&P 500 universe in `data/sp500.csv`. It fetches daily bars in batches of 100 symbols and caches the result for 15 minutes, keeping a typical 60–120-day full-index scan to about five Alpaca historical-data requests rather than roughly 500 individual requests.
@@ -135,6 +137,16 @@ python -m scripts.analyze_sector_relative_matched exports/sector-relative-202611
 ```
 
 The matched analysis is offline and makes no Alpaca or Qwen request.
+
+To test point-in-time NFCI regimes against the same saved event cohort, run:
+
+```powershell
+python -m scripts.analyze_nfci_regimes exports/sector-relative-20261110-144044-607631
+```
+
+This makes one no-key ALFRED vintage-data download and no Alpaca or Qwen request.
+Raw revisions and event rows remain in the new ignored `exports/nfci-regimes-.../`
+directory; only compact aggregate results belong in the dated research record.
 
 Replace the directory with your export. A new ignored `exports/consistency-.../`
 directory contains `summary.csv`, `by_quarter.csv`, `by_sector.csv`, individual
@@ -204,3 +216,37 @@ The Streamlit app reads Alpaca Basic market data only; it has no order, account,
 The S&P 500 screener identifies a qualifying decline from day 1's close to day 2's close. It then shows day 3's opening price as the earliest modeled entry, plus the first closing prices on or after one week and 30 calendar days after the signal. The 30-day percentage change is measured from the day-2 signal close to that 30-day closing-price checkpoint. These are research observations, not simulated trades or exit results.
 
 The currently exposed Streamlit interface does not include a backtest control. Alpaca Basic's IEX data is suitable for development and hypothesis testing—not execution-quality pricing.
+
+## Prospective recovery trials
+
+From the repository root, run the following with the project Python environment.
+
+```powershell
+python -m scripts.recovery_trials capture AAPL
+python -m scripts.recovery_trials resolve
+python -m scripts.recovery_trials report
+```
+
+Capture a ticker when making the forecast. The command uses the configured Alpaca feed, news reader, SEC setup and local Ollama model. It saves the research context, exact prompt and parsed report in the Git-ignored `exports/recovery-trials.sqlite`. A missing SEC configuration is recorded as unavailable evidence. The latest 5% close-to-close decline in the saved bars must still be below its pre-drop close at every subsequent observed close. Only the first saved forecast per ticker and drop date counts.
+
+Run resolve again as prices arrive. Recovery means at least one adjusted close reaches the adjusted pre-drop close during the first 30 observed ticker bars strictly after the UTC forecast date. The current UTC date is excluded. The resolver retrieves the reference bar and outcome bars together to account for subsequent price adjustments. Missing reference prices or insufficient bars leave a trial pending, including potentially delisted stocks.
+
+Report shows counts and observed recovery fractions overall, by directional score, by evidence coverage and by their intersection. Compare coverage bands within a score band. A score of 80 has no assumed 80% probability interpretation. Ticker selection, repeated companies, overlapping dates and unresolved cases can all affect the rates. This is a prospective stock-price study. Historical results, trading returns and changes to production scoring are outside its scope.
+
+### Comparing changes to Qwen
+
+Once enough captured trials have resolved, freeze a named set once. For a clean before/after comparison, replay the current checkout before editing the prompt or weights, then replay the edited checkout against the same set. Version names are write-once. These commands use the default private trial database.
+
+```powershell
+python -m scripts.recovery_trials freeze cohort1
+python -m scripts.recovery_trials replay cohort1 before
+# After changing the model input or scoring code
+python -m scripts.recovery_trials replay cohort1 after
+python -m scripts.recovery_trials compare cohort1 before after
+```
+
+For a weighting-only experiment, append `--weights-only` to **both** replay commands. This reuses the original captured category ratings and recalculates coverage and score without calling Ollama. Full replay runs the current prompt builder and scorer against the archived context. It can test input changes expressible from that context. New evidence fields or changes to upstream collection may require fresh prospective captures. Replay stores predictions, generation settings, and app source hashes locally. Use the same model build and settings for both runs. Full generations can vary even with identical inputs.
+
+Each replay also compares against `captured`, the original forecast for each case. The comparison shows before, after and candidate-minus-baseline differences. Higher recovery AUC means recovered stocks more often outrank unrecovered stocks (ties earn half credit). Directional accuracy measures how often scores above 50 predicted recovery and scores below 50 predicted non-recovery. Neutral calls abstain. Coverage-correctness AUC measures whether evidence coverage ranks correct directional calls above incorrect ones. Check the directional-call counts since abstentions can change the evaluated subset. A null AUC means one of its two comparison classes is absent.
+
+These are descriptive regression metrics. Small differences can arise by chance. A repeatedly inspected suite is development data. Validate promising changes on later forecasts before drawing a predictive conclusion.
